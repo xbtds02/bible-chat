@@ -1,0 +1,16 @@
+{
+  "name": "圣经聊天 - Bible Chat",
+  "short_name": "圣经聊天",
+  "description": "基于圣经的 AI 学习助手 - 对话、经文查询、每日灵修、祷告",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#7C5CFC",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
