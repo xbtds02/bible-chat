@@ -4,24 +4,22 @@ Cloudflare DNS 自动配置脚本
 配置 biblechat.cc 的 DNS 记录指向 GitHub Pages
 
 使用方法：
-1. 登录 Cloudflare Dashboard → My Profile → API Tokens → Create Token
+1. 登录 Cloudflare 仪表板 → 我的个人资料 → API 令牌 → 创建令牌
 2. 使用 "Zone:Edit" 模板，选择 biblechat.cc 域名
 3. 复制 Token，填入下面的 CF_API_TOKEN
 4. 运行脚本：python configure_cloudflare.py
-"""
-
-import requests
-import sys
+导入 requests
+导入 sys
 
 # ============ 请填写以下信息 ============
-CF_API_TOKEN = ""  # Cloudflare API Token (Zone:Edit 权限)
+CF_API_TOKEN = "cfat_WtDJo76I26kOk36IK1mY3REG7pwFGrYvCb4YK5bpec0a13a1"  # Cloudflare API Token（Zone:Edit 权限）
 # ======================================
 
-if not CF_API_TOKEN:
-    print("错误：请先在脚本中填写 CF_API_TOKEN")
+如果 不 CF_API_TOKEN:
+    "错误：请先在脚本中填写 CF_API_TOKEN")
     print("获取方式：Cloudflare Dashboard → My Profile → API Tokens → Create Token")
-    print("选择 'Zone:Edit' 模板，选择 biblechat.cc 域名")
-    sys.exit(1)
+    打印("选择 'Zone:Edit' 模板，选择 biblechat.cc 域名")
+    sys.退出(1)
 
 HEADERS = {
     "Authorization": f"Bearer {CF_API_TOKEN}",
@@ -32,21 +30,21 @@ HEADERS = {
 r = requests.get("https://api.cloudflare.com/client/v4/zones", headers=HEADERS)
 if r.status_code != 200:
     print(f"获取 Zone 失败: {r.status_code}")
-    print(r.text)
-    sys.exit(1)
+    打印(r.文本)
+    sys.退出(1)
 
 zones = r.json().get("result", [])
-zone_id = None
-for zone in zones:
-    if zone["name"] == "biblechat.cc":
-        zone_id = zone["id"]
-        break
+zone_id = 无
+对于 zone 在 zones 中：
+    如果区域[] == "biblechat.cc":
+        区域_id = 区域["id"]
+        
 
-if not zone_id:
-    print("未找到 biblechat.cc 的 Zone，请确认 Token 有权限访问该域名")
-    sys.exit(1)
+如果 没有 zone_id：
+    打印("未找到 biblechat.cc 的 Zone，请确认 Token 有权限访问该域名")
+    sys.退出(1)
 
-print(f"找到 Zone ID: {zone_id}")
+打印(
 
 # 2. 检查现有 DNS 记录
 r = requests.get(f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records", headers=HEADERS)
