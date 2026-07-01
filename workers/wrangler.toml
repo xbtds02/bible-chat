@@ -1,0 +1,8 @@
+name = "biblechat-api"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+[env.production]
+kv_namespaces = [
+  { binding = "USER_KV", id = "USER_KV_PLACEHOLDER" }
+]
