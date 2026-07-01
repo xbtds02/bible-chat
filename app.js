@@ -181,8 +181,29 @@ class BibleChatApp {
     if (this.bibleData) return;
     try {
       const res = await fetch('data/bible-full.json');
-      this.bibleData = await res.json();
+      const raw = await res.json();
+      // Convert flat array to OT/NT structure
+      this.bibleData = { OT: [], NT: [] };
+      for (const book of raw) {
+        const t = book.testament || 'OT';
+        const chapters = book.chapters.map((verses, ci) => ({
+          chapter: ci + 1,
+          verses: verses.map((v, vi) => ({
+            ref: `${ci + 1}:${v.n || vi + 1}`,
+            zh: v.zh || '',
+            en: v.en || ''
+          }))
+        }));
+        this.bibleData[t].push({
+          en: book.en,
+          zh: book.zh,
+          abbr: book.abbr,
+          abbrev: book.abbrev,
+          chapters: chapters
+        });
+      }
     } catch(e) {
+      console.error('Failed to load Bible:', e);
       this.bibleData = { OT: [], NT: [] };
     }
   }
