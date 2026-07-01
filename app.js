@@ -189,6 +189,15 @@ class BibleChatApp {
     const input = $('chatInput');
     const text = input.value.trim();
     if (!text) return;
+    // 检查 API Key
+    if (!getApiKey()) {
+      this.chatHistory.push({ role: 'user', content: text });
+      this.chatHistory.push({ role: 'ai', content: '⚠️ 尉要使用 AI 对话功能，请先设置 API Key。\n\n请点击底部「更多」→「设置」→ 输入你的 OpenRouter API Key。\n\n获取免费 Key：https://openrouter.ai/keys', model: 'system' });
+      this.renderChatMessages();
+      this.saveChat();
+      input.value = '';
+      return;
+    }
     input.value = '';
     input.style.height = 'auto';
 
@@ -971,6 +980,7 @@ class BibleChatApp {
     const input = $('podcastInput');
     const text = input.value.trim();
     if (!text) { showToast('请输入内容'); return; }
+    if (!getApiKey()) { showToast('请先在「更多→设置」中输入 API Key'); return; }
     const scriptEl = $('podcastScript');
     scriptEl.style.display = 'block';
     scriptEl.innerHTML = '<div class="loading"><div class="loading-spinner"></div>生成播客脚本中...</div>';
