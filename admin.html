@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bible Chat 管理面板</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+.container { max-width: 900px; margin: 0 auto; padding: 20px; }
+h1 { text-align: center; margin: 20px 0; color: #58a6ff; font-size: 24px; }
+.login-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 30px; max-width: 400px; margin: 60px auto; }
+.login-box input { width: 100%; padding: 12px; margin: 8px 0; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #e6edf3; font-size: 14px; }
+.login-box button { width: 100%; padding: 12px; background: #238636; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; margin-top: 10px; }
+.login-box button:hover { background: #2ea043; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 20px 0; }
+.stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; text-align: center; }
+.stat-card .num { font-size: 36px; font-weight: 700; color: #58a6ff; }
+.stat-card .label { font-size: 13px; color: #8b949e; margin-top: 6px; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; background: #161b22; border-radius: 12px; overflow: hidden; }
+th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #30363d; font-size: 14px; }
+th { background: #21262d; color: #8b949e; font-weight: 600; }
+tr:hover { background: #1c2128; }
+.hidden { display: none; }
+.logout { float: right; background: #da3633; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.logout:hover { background: #f85149; }
+.error { color: #f85149; text-align: center; margin: 10px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📖 Bible Chat 管理面板</h1>
+
+  <div id="loginView" class="login-box">
+    <p style="text-align:center; margin-bottom:15px; color:#8b949e;">请输入管理员密码</p>
+    <input type="password" id="adminPwd" placeholder="管理员密码" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">登录</button>
+    <p id="loginError" class="error hidden"></p>
+  </div>
+
+  <div id="adminView" class="hidden">
+    <button class="logout" onclick="logout()">退出</button>
+    <div class="stats">
+      <div class="stat-card"><div class="num" id="statUsers">-</div><div class="label">注册用户</div></div>
+      <div class="stat-card"><div class="num" id="statChats">-</div><div class="label">AI 对话总数</div></div>
+      <div class="stat-card"><div class="num" id="statServer">-</div><div class="label">服务器时间</div></div>
+    </div>
+    <table>
+      <thead><tr><th>姓名</th><th>邮箱</th><th>手机</th><th>注册时间</th></tr></thead>
+      <tbody id="userTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API_BASE = 'https://biblechat-api.xbtds02.workers.dev';
+
+function doLogin() {
+  const pwd = document.getElementById('adminPwd').value;
+  fetch(`${API_BASE}/api/admin`, { headers: { 'Authorization': `Bearer ${pwd}` } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        const el = document.getElementById('loginError');
+        el.textContent = data.error;
+        el.classList.remove('hidden');
+        return;
+      }
+      localStorage.setItem('bc_admin_pwd', pwd);
+      renderAdmin(data);
+    })
+    .catch(e => {
+      const el = document.getElementById('loginError');
+      el.textContent = '连接失败: ' + e.message;
+      el.classList.remove('hidden');
+    });
+}
+
+function renderAdmin(data) {
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('adminView').classList.remove('hidden');
+  document.getElementById('statUsers').textContent = data.totalUsers;
+  document.getElementById('statChats').textContent = data.totalChats;
+  document.getElementById('statServer').textContent = new Date(data.serverTime).toLocaleTimeString('zh-CN');
+  const tbody = document.getElementById('userTable');
+  if (data.users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#8b949e;">暂无注册用户</td></tr>';
+  } else {
+    tbody.innerHTML = data.users.map(u =>
+      `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.phone||'-'}</td><td>${new Date(u.registeredAt).toLocaleString('zh-CN')}</td></tr>`
+    ).join('');
+  }
+}
+
+function logout() {
+  localStorage.removeItem('bc_admin_pwd');
+  location.reload();
+}
+
+// 自动登录
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem('bc_admin_pwd');
+  if (saved) {
+    document.getElementById('adminPwd').value = saved;
+    doLogin();
+  }
+});
+</script>
+</body>
+</html>
