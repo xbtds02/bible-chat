@@ -2,200 +2,141 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>圣经小助手 - 你的专属圣经伙伴</title>
-<meta name="description" content="免费中文圣经阅读、语音朗读、每日金句、AI圣经问答、祷告灵修">
-<meta name="keywords" content="圣经,中文圣经,圣经阅读,每日经文,祷告,灵修,AI圣经">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
-<link rel="manifest" href="manifest.json">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
+<title>Bible Chat - AI智慧信仰助手</title>
+<meta name="description" content="Bible Chat - AI驱动的圣经阅读与信仰交流，每日金句、祷告、播客">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#x271D;</text></svg>">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0f0f1a;--surface:#1a1a2e;--surface2:#252545;--surface3:#2a2a4a;--gold:#d4a574;--gold2:#c9964d;--accent:#8b5cf6;--accent2:#a78bfa;--text:#e8e0d0;--text2:#a09080;--text3:#7a6a5a;--danger:#ef4444;--success:#22c55e;--radius:12px;--radius-sm:8px;--radius-lg:16px;--shadow:0 4px 24px rgba(0,0,0,.3)}
-html{scroll-behavior:smooth}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;overflow-x:hidden}
-body::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 0%, rgba(139,92,246,.06) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(212,165,116,.04) 0%, transparent 50%);pointer-events:none;z-index:0}
-#app{position:relative;z-index:1;max-width:100%;margin:0 auto}
-
-/* NAV */
-.nav{position:sticky;top:0;z-index:100;background:rgba(15,15,26,.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 16px;height:56px}
-.nav-logo{font-size:20px;font-weight:700;color:var(--gold);margin-right:auto;display:flex;align-items:center;gap:8px}
-.nav-logo span{font-size:14px;color:var(--text2);font-weight:400}
-.nav-actions{display:flex;gap:4px}
-.nav-btn{width:36px;height:36px;border:none;border-radius:50%;background:transparent;color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
-.nav-btn:hover{background:var(--surface2);color:var(--text)}
-.nav-btn.active{background:var(--accent);color:#fff}
-
-/* TAB BAR */
-.tab-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(15,15,26,.95);backdrop-filter:blur(20px);border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-around;padding:8px 0 env(safe-area-inset-bottom,8px);z-index:100}
-.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;border:none;background:none;color:var(--text3);font-size:10px;cursor:pointer;padding:4px;transition:all .2s;min-width:0}
-.tab-item .tb-icon{font-size:22px;transition:all .2s}
-.tab-item.active{color:var(--gold)}
-.tab-item.active .tb-icon{transform:translateY(-2px)}
-
-/* CONTENT */
-.content{padding:16px 16px 100px;max-width:800px;margin:0 auto}
-.page{display:none}
-.page.active{display:block;animation:fadeIn .3s}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-/* HEADERS */
-.section-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.section-header h2{font-size:22px;color:var(--text);font-weight:700}
-.section-header .sh-icon{font-size:26px}
-.stats-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.stat-badge{background:var(--surface);border-radius:20px;padding:6px 14px;font-size:12px;color:var(--text2);border:1px solid rgba(255,255,255,.06)}
-
-/* CARDS */
-.card{background:var(--surface);border-radius:var(--radius-lg);padding:20px;border:1px solid rgba(255,255,255,.04);transition:all .3s;position:relative;overflow:hidden}
-.card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-.card-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.card-header .card-icon{width:40px;height:40px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:20px;background:rgba(139,92,246,.15)}
-.card h3{font-size:16px;color:var(--text);line-height:1.4}
-.card .card-ref{font-size:11px;color:var(--text3);margin-top:4px}
-.card .card-desc{font-size:13px;color:var(--text2);line-height:1.5;margin-top:8px}
-.card .card-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-
-/* BUTTONS */
-.btn{padding:10px 20px;border-radius:var(--radius);border:none;font-size:14px;cursor:pointer;font-weight:600;transition:all .2s;display:inline-flex;align-items:center;gap:6px;font-family:inherit}
-.btn-primary{background:var(--accent);color:#fff}
-.btn-primary:hover{background:var(--accent2);transform:translateY(-1px)}
-.btn-gold{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#1a1a1a}
-.btn-gold:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(212,165,116,.3)}
-.btn-outline{border:1.5px solid rgba(255,255,255,.15);background:transparent;color:var(--text)}
-.btn-outline:hover{background:var(--surface2)}
-.btn-sm{padding:6px 14px;font-size:12px}
-.btn-icon{width:36px;height:36px;padding:0;justify-content:center;border-radius:50%}
-
-/* FORMS */
-.input-group{margin-bottom:16px}
-.input-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.input-group input,.input-group textarea,.input-group select{width:100%;padding:12px 16px;background:var(--surface2);border:1.5px solid rgba(255,255,255,.08);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:inherit;transition:all .2s}
-.input-group input:focus,.input-group textarea:focus,.input-group select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(139,92,246,.2)}
-.input-group textarea{resize:vertical;min-height:80px}
-
-/* VERSE CARD */
-.verse-card{background:linear-gradient(135deg,var(--surface) 0%,var(--surface2) 100%);border-radius:var(--radius-lg);padding:32px 24px;border:1px solid rgba(212,165,116,.15);position:relative;overflow:hidden;margin-bottom:20px}
-.verse-card::before{content:'';position:absolute;top:-50%;right:-20%;width:200px;height:200px;background:radial-gradient(circle,rgba(212,165,116,.08) 0%,transparent 70%);border-radius:50%}
-.verse-card .vc-date{font-size:12px;color:var(--gold);margin-bottom:12px;font-weight:600;letter-spacing:1px}
-.verse-card .vc-text{font-size:20px;line-height:1.8;color:var(--text);position:relative;z-index:1;margin-bottom:16px}
-.verse-card .vc-ref{font-size:13px;color:var(--text2);font-weight:600}
-.verse-card .vc-theme{display:inline-block;padding:4px 12px;border-radius:20px;background:rgba(212,165,116,.1);color:var(--gold);font-size:11px;margin-bottom:12px}
-.verse-card .vc-actions{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1}
-
-/* BIBLE READER */
-.bible-nav{display:flex;gap:8px;margin-bottom:20px;align-items:center;flex-wrap:wrap}
-.bible-nav select{padding:10px 14px;background:var(--surface2);border:1.5px solid rgba(255,255,255,.08);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:inherit;min-width:120px}
-.bible-nav select:focus{outline:none;border-color:var(--accent)}
-.bible-text{background:var(--surface);border-radius:var(--radius-lg);padding:24px;border:1px solid rgba(255,255,255,.04)}
-.bible-text h3{margin-bottom:16px;font-size:18px;color:var(--gold)}
-.bible-text .verse{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:15px;line-height:1.7;transition:all .2s}
-.bible-text .verse:hover{background:rgba(255,255,255,.02);border-radius:6px}
-.bible-text .verse-num{color:var(--gold);font-size:11px;font-weight:700;min-width:24px;padding-top:2px}
-.bible-text .verse-text{flex:1;color:var(--text)}
-.tts-bar{display:flex;align-items:center;gap:12px;margin:16px 0;padding:12px 16px;background:var(--surface2);border-radius:var(--radius);flex-wrap:wrap}
-.tts-bar .speed-btn{padding:4px 10px;border:1px solid rgba(255,255,255,.1);border-radius:20px;background:transparent;color:var(--text2);cursor:pointer;font-size:12px;transition:all .2s}
-.tts-bar .speed-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.tts-status{font-size:12px;color:var(--text3);margin-left:auto}
-
-/* CHAT */
-.chat-container{background:var(--surface);border-radius:var(--radius-lg);border:1px solid rgba(255,255,255,.04);display:flex;flex-direction:column;height:calc(100vh - 300px);min-height:400px}
-.chat-messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
-.chat-msg{max-width:85%;padding:14px 18px;border-radius:var(--radius-lg);font-size:14px;line-height:1.7;word-break:break-word;animation:fadeIn .2s}
-.chat-msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
-.chat-msg.ai{align-self:flex-start;background:var(--surface2);color:var(--text);border-bottom-left-radius:4px}
-.chat-msg.loading{display:flex;gap:4px;align-items:center;padding:12px 18px}
-.chat-msg.loading .dot{width:6px;height:6px;background:var(--text3);border-radius:50%;animation:bounce 1.4s infinite;animation-delay:calc(var(--d)*.2s)}
-@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
-
-.chat-input-area{padding:16px;border-top:1px solid rgba(255,255,255,.06);display:flex;gap:8px;align-items:center}
-.chat-input-area textarea{flex:1;padding:12px 16px;background:var(--surface2);border:1.5px solid rgba(255,255,255,.08);border-radius:25px;color:var(--text);font-size:14px;font-family:inherit;resize:none;height:44px;max-height:120px;line-height:1.4}
-.chat-input-area textarea:focus{outline:none;border-color:var(--accent)}
-.chat-send{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
-.chat-send:hover{background:var(--accent2)}
-.quick-prompts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-.quick-prompt{padding:8px 14px;background:var(--surface2);border:1px solid rgba(255,255,255,.06);border-radius:20px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .2s;white-space:nowrap}
-.quick-prompt:hover{background:var(--surface3);color:var(--text);transform:translateY(-1px)}
-
-/* PRAYER */
-.prayer-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
-.prayer-cat{padding:8px 16px;border-radius:20px;border:1px solid rgba(255,255,255,.1);background:var(--surface);color:var(--text2);cursor:pointer;font-size:13px;transition:all .2s;white-space:nowrap}
-.prayer-cat:hover{background:var(--surface2);color:var(--text)}
-.prayer-cat.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.prayer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-.prayer-card{background:var(--surface);border-radius:var(--radius-lg);padding:20px;border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .3s}
-.prayer-card:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:rgba(139,92,246,.2)}
-.prayer-card h4{font-size:15px;color:var(--text);margin-bottom:8px}
-
-/* PODCAST */
-.podcast-player{background:linear-gradient(135deg,var(--surface) 0%,#1a1030 100%);border-radius:var(--radius-lg);padding:24px;border:1px solid rgba(139,92,246,.15);margin-bottom:20px}
-.podcast-info{text-align:center;margin-bottom:20px}
-.podcast-info h3{font-size:20px;color:var(--text)}
-.podcast-info p{font-size:13px;color:var(--text2);margin-top:6px}
-.podcast-controls{display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:16px}
-.podcast-btn{width:48px;height:48px;border-radius:50%;border:none;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
-.podcast-play{width:64px;height:64px;background:var(--accent);color:#fff;font-size:24px}
-.podcast-play:hover{background:var(--accent2);transform:scale(1.05)}
-.podcast-progress{width:100%;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;cursor:pointer;margin:12px 0}
-.podcast-progress-bar{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width .1s linear}
-.podcast-time{display:flex;justify-content:space-between;font-size:11px;color:var(--text3)}
-.podcast-transcript{background:var(--surface);border-radius:var(--radius);padding:16px;margin-top:16px;max-height:200px;overflow-y:auto;font-size:14px;color:var(--text2);line-height:1.8}
-
-/* MODAL */
-.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s}
-.modal{padding:32px;border-radius:var(--radius-lg);width:90%;max-width:440px;max-height:90vh;overflow-y:auto;position:relative}
-.modal h2{font-size:20px;margin-bottom:20px}
-.modal-close{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:none;background:var(--surface2);color:var(--text2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
-.modal-close:hover{background:var(--surface3);color:var(--text)}
-
-/* GRID */
-.grid-2{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-
-/* TOAST */
-.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--surface2);color:var(--text);padding:12px 24px;border-radius:25px;font-size:14px;z-index:300;animation:fadeIn .3s}
-
-/* RESPONSIVE */
-@media(max-width:600px){
-  .nav-logo{font-size:17px}
-  .verse-card .vc-text{font-size:17px}
-  .prayer-grid{grid-template-columns:1fr}
-  .grid-2{grid-template-columns:1fr}
-  .card{padding:16px}
-}
-
-/* SCROLLBAR */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f0f23;--card:#1a1a2e;--card2:#232342;--accent:#ffd700;--accent2:#c9a227;--text:#e8e8e8;--text2:#a0a0b0;--success:#4caf50;--danger:#f44336;--border:#2a2a4a}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+#app{height:100%;display:flex;flex-direction:column}
+.page{flex:1;display:none;flex-direction:column;overflow:hidden}
+.page.active{display:flex}
+.page-header{padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.page-header h2{font-size:18px;color:var(--accent)}
+.page-content{flex:1;overflow-y:auto;padding:16px}
+.bottom-nav{flex-shrink:0;display:flex;justify-content:space-around;background:var(--card);border-top:1px solid var(--border);padding:6px 0}
+.bottom-nav button{flex:1;background:none;border:none;color:var(--text2);font-size:12px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;transition:color .2s}
+.bottom-nav button.active{color:var(--accent)}
+.bottom-nav button span{font-size:20px}
+.chat-container{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.message{max-width:85%;padding:12px 16px;border-radius:18px;font-size:15px;line-height:1.6;word-break:break-word}
+.message.user{align-self:flex-end;background:var(--accent);color:#1a1a2e}
+.message.ai{align-self:flex-start;background:var(--card2);color:var(--text)}
+.message .model-tag{font-size:11px;color:var(--accent2);margin-bottom:4px;opacity:.7}
+.chat-input-area{padding:12px 16px;background:var(--card);border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end}
+.chat-input-area textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:15px;resize:none;min-height:44px;max-height:120px;outline:none}
+.chat-input-area button{background:var(--accent);border:none;border-radius:12px;padding:10px 18px;color:#1a1a2e;font-weight:bold;cursor:pointer;font-size:14px;white-space:nowrap}
+.chat-input-area button:disabled{opacity:.5}
+.model-selector{display:flex;gap:6px;padding:8px 16px;background:var(--card);overflow-x:auto;scrollbar-width:none}
+.model-selector button{background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:5px 12px;color:var(--text2);font-size:12px;cursor:pointer;white-space:nowrap}
+.model-selector button.active{background:var(--accent);color:#1a1a2e;border-color:var(--accent);font-weight:bold}
+.bible-nav{display:flex;gap:8px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.bible-nav button{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-size:14px;cursor:pointer;white-space:nowrap}
+.bible-nav button.active{background:var(--accent);color:#1a1a2e}
+.book-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px}
+.book-btn{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;color:var(--text);font-size:13px;transition:all .2s}
+.book-btn:hover,.book-btn:active{background:var(--accent);color:#1a1a2e}
+.book-btn .abbr{color:var(--accent);font-size:11px}
+.book-btn:hover .abbr{color:#1a1a2e}
+.chapter-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:8px}
+.chapter-btn{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:var(--text);font-size:14px}
+.chapter-btn:hover,.chapter-btn:active{background:var(--accent);color:#1a1a2e}
+.verse-content{padding:12px;line-height:2;font-size:16px}
+.verse-content .lang-toggle{text-align:center;margin-bottom:12px;padding:8px;background:var(--card2);border-radius:8px}
+.verse-content .lang-toggle button{background:transparent;border:1px solid var(--border);border-radius:16px;padding:4px 14px;color:var(--text2);font-size:13px;cursor:pointer;margin:0 4px}
+.verse-content .lang-toggle button.active{background:var(--accent);color:#1a1a2e;border-color:var(--accent)}
+.verse-line{padding:8px 0;border-bottom:1px solid var(--border)}
+.verse-line:last-child{border-bottom:none}
+.verse-line .ref{color:var(--accent);font-size:13px;margin-right:8px;font-weight:bold}
+.verse-line .zh{color:var(--text)}
+.verse-line .en{color:var(--text2);font-size:14px;margin-top:4px;font-style:italic}
+.verse-actions{display:flex;gap:8px;padding:12px;justify-content:center;flex-wrap:wrap}
+.verse-actions button{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text);font-size:13px;cursor:pointer}
+.verse-actions button:hover{background:var(--accent);color:#1a1a2e}
+.daily-card{background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px;text-align:center}
+.daily-card .date{color:var(--accent);font-size:14px;margin-bottom:8px}
+.daily-card .ref{color:var(--accent2);font-size:13px;margin-bottom:12px}
+.daily-card .verse-zh{font-size:20px;line-height:1.8;color:var(--text);margin-bottom:8px;font-weight:500}
+.daily-card .verse-en{font-size:15px;color:var(--text2);font-style:italic}
+.share-card{background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+.share-card textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:14px;resize:vertical;min-height:80px;outline:none;margin-bottom:12px}
+.share-card .preview{background:var(--bg);border-radius:10px;padding:16px;margin-bottom:12px;text-align:center}
+.share-card .preview h4{color:var(--accent);margin-bottom:8px}
+.share-card .preview p{margin:4px 0}
+.share-card .preview .link{color:var(--accent2);font-size:12px;margin-top:8px}
+.share-actions{display:flex;gap:8px;flex-wrap:wrap}
+.share-actions button{flex:1;min-width:120px;background:var(--accent);border:none;border-radius:10px;padding:10px;color:#1a1a2e;font-weight:bold;cursor:pointer;font-size:14px}
+.share-actions button.secondary{background:var(--card2);border:1px solid var(--border);color:var(--text)}
+#verseCanvas{display:none}
+.prayer-list{display:flex;flex-direction:column;gap:8px}
+.prayer-item{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:all .2s}
+.prayer-item:hover{background:var(--card)}
+.prayer-item h4{color:var(--accent);font-size:15px;margin-bottom:4px}
+.prayer-item p{color:var(--text2);font-size:13px}
+.prayer-detail{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:8px;line-height:1.8;font-size:15px;white-space:pre-wrap}
+.prayer-detail .prayer-title{color:var(--accent);font-size:18px;margin-bottom:12px;text-align:center}
+.podcast-area{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+.podcast-area textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:14px;resize:vertical;min-height:100px;outline:none;margin-bottom:12px}
+.podcast-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.podcast-controls button{background:var(--accent);border:none;border-radius:10px;padding:10px 18px;color:#1a1a2e;font-weight:bold;cursor:pointer;font-size:14px}
+.podcast-controls .speed{display:flex;align-items:center;gap:6px;color:var(--text2);font-size:13px}
+.podcast-controls .speed input{width:80px}
+.podcast-script{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:12px;white-space:pre-wrap;font-size:14px;line-height:1.8;max-height:300px;overflow-y:auto}
+.statement-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;line-height:1.8;font-size:15px}
+.statement-card h3{color:var(--accent);margin-bottom:10px;font-size:18px}
+.statement-card p{margin-bottom:8px}
+.user-form{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+.user-form input,.user-form select{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;margin-bottom:10px;outline:none}
+.user-form button{width:100%;background:var(--accent);border:none;border-radius:10px;padding:12px;color:#1a1a2e;font-weight:bold;cursor:pointer;font-size:15px;margin-bottom:8px}
+.user-form .link-btn{background:transparent;border:none;color:var(--accent);font-size:13px;cursor:pointer;text-decoration:underline}
+.user-info{padding:12px;background:var(--card2);border-radius:10px;margin-bottom:12px}
+.user-info p{margin:4px 0;color:var(--text2);font-size:14px}
+.admin-panel{display:none;position:fixed;inset:0;background:var(--bg);z-index:1000;flex-direction:column}
+.admin-panel.active{display:flex}
+.admin-header{padding:16px;background:var(--card);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.admin-header h2{color:var(--accent)}
+.admin-header button{background:var(--danger);border:none;border-radius:8px;padding:8px 16px;color:#fff;cursor:pointer}
+.admin-content{flex:1;overflow-y:auto;padding:16px}
+.admin-content .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+.admin-content .stat-card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
+.admin-content .stat-card .number{color:var(--accent);font-size:28px;font-weight:bold}
+.admin-content .stat-card .label{color:var(--text2);font-size:13px;margin-top:4px}
+.admin-content table{width:100%;border-collapse:collapse;font-size:13px}
+.admin-content th,.admin-content td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+.admin-content th{color:var(--accent);font-size:13px}
+.admin-content td{color:var(--text2)}
+.loading{text-align:center;padding:20px;color:var(--text2)}
+.loading-spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.welcome{text-align:center;padding:40px 20px;color:var(--text2)}
+.welcome h1{color:var(--accent);font-size:28px;margin-bottom:16px}
+.welcome p{font-size:15px;line-height:1.8;max-width:400px;margin:0 auto}
+.welcome .start-btn{margin-top:24px;background:var(--accent);border:none;border-radius:12px;padding:14px 32px;color:#1a1a2e;font-weight:bold;font-size:16px;cursor:pointer}
+.back-btn{background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer;padding:4px 8px;display:flex;align-items:center;gap:4px}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--card2);border:1px solid var(--accent);border-radius:10px;padding:12px 20px;color:var(--text);font-size:14px;opacity:0;transition:all .3s;z-index:2000;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:4px}
-
-/* SHARE CARD */
-.share-card{background:#fff;color:#333;border-radius:var(--radius-lg);padding:24px;max-width:500px;margin:0 auto;text-align:center;font-family:'SimSun','STSong',serif;position:relative}
-.share-card .sc-bible{font-size:18px;line-height:1.8;color:#333;margin-bottom:12px;text-align:left}
-.share-card .sc-ref{font-size:14px;color:#888;margin-bottom:16px}
-.share-card .sc-brand{font-size:12px;color:#aaa;border-top:1px solid #eee;padding-top:12px}
-.share-card-img{width:100%;border-radius:8px;margin-bottom:16px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:var(--accent2)}
 </style>
 </head>
 <body>
 <div id="app">
-<nav class="nav">
-  <div class="nav-logo">📖 圣经小助手<span>biblechat.cc</span></div>
-  <div class="nav-actions">
-    <button class="nav-btn" id="navUser" title="用户">👤</button>
+  <div class="bottom-nav" id="bottomNav">
+    <button data-page="chat" class="active"><span>&#x1F4AC;</span>AI对话</button>
+    <button data-page="bible"><span>&#x1F4D6;</span>圣经</button>
+    <button data-page="daily"><span>&#x2728;</span>每日金句</button>
+    <button data-page="prayer"><span>&#x1F64F;</span>祷告</button>
+    <button data-page="more"><span>&#x2699;&#xFE0F;</span>更多</button>
   </div>
-</nav>
-
-<div class="content" id="contentArea"></div>
-
-<div class="tab-bar">
-  <button class="tab-item active" data-page="home"><span class="tb-icon">🏠</span>首页</button>
-  <button class="tab-item" data-page="bible"><span class="tb-icon">📖</span>读经</button>
-  <button class="tab-item" data-page="chat"><span class="tb-icon">💬</span>AI问答</button>
-  <button class="tab-item" data-page="prayer"><span class="tb-icon">🙏</span>祷告</button>
-  <button class="tab-item" data-page="podcast"><span class="tb-icon">🎙️</span>播客</button>
 </div>
-</div>
-
-<script src="app.js?v=2"></script>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
 </body>
 </html>
