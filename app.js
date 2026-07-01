@@ -2,7 +2,12 @@
 // 改动: 1) API 改为 apicz.cc 中转站 2) 只用 GPT 模型 3) 不登录也可用 AI 4) 注册时有新人问卷
 
 // ======== 配置 ========
-const API_BASE = 'https://www.apicz.cc/v1/chat/completions';
+// API base: 优先用 localStorage 里的自定义地址（用于切换到代理）
+const DEFAULT_API_BASE = 'https://www.apicz.cc/v1/chat/completions';
+function getApiBase() {
+  return localStorage.getItem('bc_api_base') || DEFAULT_API_BASE;
+}
+const API_BASE = getApiBase(); // 兼容旧代码
 // API Key 分段存储（避免 GitHub secret scanning 拦截完整密钥）
 const _AK = [115,107,45,55,48,49,48,53,52,99,56,57,54,101,100,48,57,57,56,48,97,52,51,50,98,57,49,55,52,48,55,55,53,97,52,98,100,51,99,54,50,51,101,49,54,97,98,98,49,49,100,49,101,51,52,49,51,52,50,53,48,50,100,49,55,102,49].map(c=>String.fromCharCode(c)).join('');
 const DEFAULT_API_KEY = _AK;
@@ -319,7 +324,7 @@ class BibleChatApp {
         ...this.chatHistory.slice(-8).filter(m => m.role !== 'system')
       ];
 
-      const res = await fetch(API_BASE, {
+      const res = await fetch(getApiBase(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1024,7 +1029,7 @@ class BibleChatApp {
 - 用 [BGM:xxx] 标记背景音乐切换
 - 结尾有祝福语`;
 
-      const res = await fetch(API_BASE, {
+      const res = await fetch(getApiBase(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1121,9 +1126,16 @@ class BibleChatApp {
       <h3 style="color:var(--accent);margin:16px 0 12px">⚙️ API 配置</h3>
       <div style="background:var(--card2);border-radius:10px;padding:16px;margin-bottom:16px">
         <p style="color:var(--text2);font-size:13px;margin-bottom:8px">当前配置：</p>
-        <p style="font-size:13px">API 地址: <code style="color:var(--accent)">${API_BASE}</code></p>
+        <p style="font-size:13px">API 地址: <code style="color:var(--accent)">${getApiBase()}</code></p>
         <p style="font-size:13px">模型: <code style="color:var(--accent)">${modelLabel}</code></p>
         <p style="font-size:13px">Key: <code style="color:var(--accent2)">${getApiKey().slice(0,8)}...${getApiKey().slice(-6)}</code></p>
+        <div style="margin-top:12px">
+          <label style="color:var(--text2);font-size:13px">API Base URL (中转/代理地址):</label>
+          <input id="adminApiBase" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;outline:none;margin-top:4px" placeholder="https://www.apicz.cc/v1/chat/completions" value="${getApiBase()}">
+          <button data-action="saveApiBase" style="margin-top:8px;background:var(--accent);border:none;border-radius:8px;padding:6px 12px;color:#1a1a2e;font-weight:bold;cursor:pointer;margin-right:8px">保存 API 地址</button>
+          <button data-action="resetApiBase" style="margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);cursor:pointer">恢复默认</button>
+          <p style="color:var(--text2);font-size:11px;margin-top:6px">💡 如遇 CORS 跨域问题，可在 Cloudflare 部署 Worker 代理后填入代理地址</p>
+        </div>
         <div style="margin-top:12px">
           <label style="color:var(--text2);font-size:13px">系统提示词:</label>
           <textarea id="adminSystemPrompt" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;min-height:120px;outline:none;margin-top:4px" placeholder="自定义 AI 系统提示词...">${localStorage.getItem('bc_system_prompt') || ''}</textarea>
@@ -1176,6 +1188,20 @@ class BibleChatApp {
       localStorage.removeItem('bc_system_prompt');
       showToast('已恢复默认提示词');
     }
+  }
+
+  saveApiBase() {
+    const url = $('adminApiBase')?.value.trim();
+    if (!url) { showToast('地址不能为空'); return; }
+    if (!/^https?:\/\//.test(url)) { showToast('地址必须以 http:// 或 https:// 开头'); return; }
+    localStorage.setItem('bc_api_base', url);
+    showToast('API 地址已保存，刷新后生效');
+  }
+
+  resetApiBase() {
+    localStorage.removeItem('bc_api_base');
+    if ($('adminApiBase')) $('adminApiBase').value = DEFAULT_API_BASE;
+    showToast('已恢复默认 API 地址');
   }
 
   closeAdmin() { const p = $('adminPanel'); if (p) p.remove(); }
