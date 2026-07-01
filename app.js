@@ -356,7 +356,15 @@ class BibleChatApp {
     } catch (e) {
       console.error('AI error:', e);
       loadingDiv.remove();
-      const reply = this.fallbackAIReply(text) + '\n\n（提示：网络异常，已使用本地知识库回答）';
+      // 区分 CORS 错误和其他错误
+      const isCors = e.message?.includes('CORS') || e.message?.includes('Failed to fetch') || e.name === 'TypeError';
+      let hint;
+      if (isCors && getApiBase().includes('apicz.cc')) {
+        hint = '\n\n❌ CORS 跨域错误：apicz.cc 不支持跨域调用。\n💡 解决方法：到 admin.html (密码 biblechat2026) 配置 Cloudflare Worker 代理地址。\n详细步骤：worker-proxy/DEPLOY_GUIDE.md';
+      } else {
+        hint = '\n\n（提示：网络异常，已使用本地知识库回答）';
+      }
+      const reply = this.fallbackAIReply(text) + hint;
       this.chatHistory.push({ role: 'ai', content: reply });
       this.renderChatMessages();
       this.saveChat();
@@ -372,7 +380,7 @@ class BibleChatApp {
     if (lower.includes('平安') || lower.includes('peace')) return '耶稣说："我留下平安给你们，我将我的平安赐给你们。"（约翰福音 14:27）';
     if (lower.includes('信心') || lower.includes('faith')) return '信心是所望之事的实底，是未见之事的确据。（希伯来书 11:1）';
     if (lower.includes('你好') || lower.includes('hello') || lower.includes('hi')) return '你好！🌟 我是你的信仰助手，请问今天我能为你做什么？';
-    return '这是一个很好的问题。让我为你思考...\n\n（当前网络不佳，已用本地知识回应。请稍后重试。）';
+    return '这是一个很好的问题。让我为你思考...\n\n（当前为本地知识库回应，未连接到 GPT。）';
   }
 
   saveChat() {
