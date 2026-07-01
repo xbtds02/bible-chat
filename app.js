@@ -1,979 +1,712 @@
-/**
- * 圣经小助手 - Bible Chat App
- * v2.0 完整版：读经、语音、AI、祷告、播客、用户系统、微信分享
- */
-
-// ============ 状态管理 ============
-const API = 'https://api.biblechat.cc';
-const DEFAULT_API_KEY = '';
-
-const State = {
-  page: 'home',
-  user: null,
-  token: null,
-  chatHistory: [],
-  bibleIndex: null,
-  prayers: null,
-  currentBook: null,
-  currentChapter: 1,
-  tts: { speaking: false, utterance: null, speed: 1 },
-  podcast: { playing: false, segments: [], currentIdx: 0 },
-  dailyVerse: null
+// Bible Chat v3.0 - Full rewrite
+const API_BASE = 'https://biblechat-api.xbtds02.workers.dev'; // 待部署后替换
+const MODELS = {
+  doubao: { id: 'doubao', name: '豆包', desc: '字节跳动' },
+  qwen: { id: 'qwen', name: '千问', desc: '阿里巴巴' },
+  gpt4o: { id: 'gpt4o', name: 'GPT-4o', desc: 'OpenAI' },
+  gpt4: { id: 'gpt4', name: 'GPT-4', desc: 'OpenAI' },
+  claude: { id: 'claude', name: 'Claude', desc: 'Anthropic' },
+  gemini: { id: 'gemini', name: 'Gemini', desc: 'Google' },
 };
 
-function $(sel) { return document.querySelector(sel); }
-function $$(sel) { return document.querySelectorAll(sel); }
-
-// ============ API 调用 ============
-async function api(endpoint, options = {}) {
-  const url = `${API}${endpoint}`;
-  const config = {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  };
-  if (State.token) {
-    config.headers.Authorization = `Bearer ${State.token}`;
+class BibleChatApp {
+  constructor() {
+    this.currentPage = 'chat';
+    this.currentModel = localStorage.getItem('bc_model') || 'doubao';
+    this.langMode = localStorage.getItem('bc_lang') || 'both'; // both, zh, en
+    this.bibleData = null;
+    this.prayersData = null;
+    this.user = JSON.parse(localStorage.getItem('bc_user') || 'null');
+    this.chatHistory = JSON.parse(localStorage.getItem('bc_chat') || '[]');
+    this.bibleStack = []; // 导航栈: [{type:'home'|'testament'|'book', data:...}]
+    this.ttsSpeaking = false;
+    this.podcastAudio = null;
+    this.init();
   }
 
-  // 如果没有API，使用本地模式
-  if (!API || API.includes('PLACEHOLDER')) {
-    return { local: true, error: 'API未配置' };
+  async init() {
+    this.setupNavigation();
+    this.showPage('chat');
+    this.loadBibleData();
+    this.loadPrayersData();
+    if (this.user) this.renderUserInfo();
   }
 
-  try {
-    const res = await fetch(url, config);
-    return await res.json();
-  } catch (e) {
-    return { error: e.message, local: true };
+  setupNavigation() {
+    document.querySelectorAll('.bottom-nav button').forEach(btn => {
+      btn.addEventListener('click', () => this.showPage(btn.dataset.page));
+    });
   }
-}
 
-// ============ 页面路由 ============
-function renderPage(page) {
-  State.page = page;
-  const c = $('#contentArea');
-  if (!c) return;
+  showPage(page) {
+    document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+    const app = document.getElementById('app');
+    // Remove old pages
+    app.querySelectorAll('.page').forEach(p => p.remove());
+    this.currentPage = page;
 
-  const pages = { home: renderHome, bible: renderBible, chat: renderChat, prayer: renderPrayer, podcast: renderPodcast };
-  c.innerHTML = pages[page] ? pages[page]() : pages.home();
+    const pageEl = document.createElement('div');
+    pageEl.className = 'page active';
+    pageEl.id = `page-${page}`;
+    app.insertBefore(pageEl, document.getElementById('bottomNav'));
 
-  $$('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.page === page));
-  if (page === 'home') loadDailyVerse();
-  if (page === 'bible') initBibleReader();
-  if (page === 'chat') initChat();
-  if (page === 'prayer') initPrayer();
-  if (page === 'podcast') initPodcast();
-}
+    switch(page) {
+      case 'chat': this.renderChatPage(pageEl); break;
+      case 'bible': this.renderBiblePage(pageEl); break;
+      case 'daily': this.renderDailyPage(pageEl); break;
+      case 'prayer': this.renderPrayerPage(pageEl); break;
+      case 'more': this.renderMorePage(pageEl); break;
+    }
+  }
 
-// ============ 首页 ============
-function renderHome() {
-  return `
-    <div class="section-header"><span class="sh-icon">✨</span><h2>每日金句</h2></div>
-    <div id="dailyVerseArea">
-      <div class="verse-card">
-        <div style="text-align:center;padding:40px;color:var(--text3)">加载中...</div>
-      </div>
-    </div>
-    <div style="margin:24px 0"><div class="section-header"><span class="sh-icon">📌</span><h2>快捷入口</h2></div></div>
-    <div class="grid-2">
-      <div class="card" onclick="navigate('bible')">
-        <div class="card-header"><div class="card-icon">📖</div></div>
-        <h3>阅读圣经</h3>
-        <div class="card-desc">全本圣经66卷书，支持语音朗读，随时聆听神的话语</div>
-      </div>
-      <div class="card" onclick="navigate('chat')">
-        <div class="card-header"><div class="card-icon">💬</div></div>
-        <h3>AI 圣经问答</h3>
-        <div class="card-desc">向AI提问任何圣经问题，即时获得深入解答</div>
-      </div>
-      <div class="card" onclick="navigate('prayer')">
-        <div class="card-header"><div class="card-icon">🙏</div></div>
-        <h3>祷告灵修</h3>
-        <div class="card-desc">35篇精心编写的祷告词，涵盖各主题</div>
-      </div>
-      <div class="card" onclick="navigate('podcast')">
-        <div class="card-header"><div class="card-icon">🎙️</div></div>
-        <h3>经文播客</h3>
-        <div class="card-desc">AI讲解经文，生成播客式音频，像听书一样学圣经</div>
-      </div>
-    </div>
-    ${renderQuickFeatures()}
-  `;
-}
-
-function renderQuickFeatures() {
-  return `
-    <div style="margin-top:24px"><div class="section-header"><span class="sh-icon">🌟</span><h2>精选经文</h2></div></div>
-    <div id="featuredVerses" class="grid-2">
-      ${getFeaturedVerses().map(v => `
-        <div class="card" onclick="shareVerse('${v.text.replace(/'/g,"\\'")}','${v.ref}')">
-          <div class="card-header"><div class="card-icon">📜</div></div>
-          <h3>${v.ref}</h3>
-          <div class="card-desc">${v.text.substring(0,60)}...</div>
+  // ======== AI 聊天 ========
+  renderChatPage(el) {
+    const welcome = this.chatHistory.length === 0;
+    el.innerHTML = `
+      <div class="chat-container">
+        ${welcome ? `<div class="welcome" id="chatWelcome"><h1>&#x271D; Bible Chat</h1><p>你好！我是你的智慧信仰助手。<br>你可以问我任何关于圣经、信仰、生命的问题，我会基于圣经给你 thoughtful 的回答。</p><button class="start-btn" onclick="app.hideWelcome()">开始对话</button></div>` : ''}
+        <div class="chat-messages" id="chatMessages" style="${welcome ? 'display:none' : ''}"></div>
+        <div class="model-selector" id="modelSelector">
+          ${Object.entries(MODELS).map(([k,v]) => `<button class="${k===this.currentModel?'active':''}" data-model="${k}">${v.name}</button>`).join('')}
         </div>
-      `).join('')}
-    </div>
-  `;
-}
+        <div class="chat-input-area">
+          <textarea id="chatInput" placeholder="输入你的问题..." rows="1"></textarea>
+          <button id="sendBtn" onclick="app.sendChat()">发送</button>
+        </div>
+      </div>`;
 
-function getFeaturedVerses() {
-  return [
-    { text: "神爱世人，甚至将他的独生子赐给他们，叫一切信他的，不至灭亡，反得永生。", ref: "约翰福音 3:16" },
-    { text: "耶和华是我的牧者，我必不至缺乏。", ref: "诗篇 23:1" },
-    { text: "你要专心仰赖耶和华，不可倚靠自己的聪明。", ref: "箴言 3:5" },
-    { text: "我留下平安给你们；我将我的平安赐给你们。", ref: "约翰福音 14:27" },
-    { text: "如今常存的有信，有望，有爱这三样，其中最大的是爱。", ref: "哥林多前书 13:13" },
-    { text: "凡劳苦担重担的人可以到我这里来，我就使你们得安息。", ref: "马太福音 11:28" }
-  ];
-}
+    if (!welcome) this.renderChatMessages();
 
-async function loadDailyVerse() {
-  const area = $('#dailyVerseArea');
-  if (!area) return;
-  try {
-    const data = await api('/api/verse/daily');
-    if (!data.error) {
-      State.dailyVerse = data;
-      area.innerHTML = renderVerseCard(data);
-    }
-  } catch (e) {
-    area.innerHTML = renderVerseCard(getLocalDailyVerse());
-  }
-}
-
-function getLocalDailyVerse() {
-  const verses = [
-    { text: "神爱世人，甚至将他的独生子赐给他们，叫一切信他的，不至灭亡，反得永生。", ref: "约翰福音 3:16", theme: "神的爱", date: new Date().toISOString().slice(0,10) },
-    { text: "你要专心仰赖耶和华，不可倚靠自己的聪明，在你一切所行的事上都要认定他，他必指引你的路。", ref: "箴言 3:5-6", theme: "信靠神", date: new Date().toISOString().slice(0,10) }
-  ];
-  const idx = new Date().getDate() % verses.length;
-  return verses[idx];
-}
-
-function renderVerseCard(data) {
-  const date = new Date(data.date || Date.now()).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-  return `
-    <div class="verse-card">
-      <div class="vc-date">📅 ${date}</div>
-      <div class="vc-theme">${data.theme || '每日金句'}</div>
-      <div class="vc-text">"${data.text}"</div>
-      <div class="vc-ref">—— ${data.ref}</div>
-      <div class="vc-actions">
-        <button class="btn btn-gold btn-sm" onclick="shareVerse('${data.text.replace(/'/g,"\\'")}','${data.ref}')">📤 分享朋友圈</button>
-        <button class="btn btn-outline btn-sm" onclick="copyText('${data.text} ——${data.ref}')">📋 复制</button>
-        <button class="btn btn-outline btn-sm" onclick="speakVerse('${data.text.replace(/'/g,"\\'")}')">🔊 朗读</button>
-        <button class="btn btn-outline btn-sm" onclick="navigate('chat');sendAIMessage('请讲解这段经文：${data.ref}')">💬 AI讲解</button>
-      </div>
-    </div>
-  `;
-}
-
-// ============ 圣经阅读 ============
-function renderBible() {
-  return `
-    <div class="section-header"><span class="sh-icon">📖</span><h2>阅读圣经</h2></div>
-    <div class="bible-nav">
-      <select id="bibleTestament" onchange="updateBibleBooks()">
-        <option value="新约">新约</option>
-        <option value="旧约">旧约</option>
-      </select>
-      <select id="bibleBook" onchange="updateChapterSelect()">
-        <option>选择书卷</option>
-      </select>
-      <select id="bibleChapter" onchange="loadBibleChapter()">
-        <option>选择章节</option>
-      </select>
-    </div>
-    <div class="tts-bar">
-      <button class="btn btn-outline btn-sm" onclick="toggleBibleTTS()" id="ttsPlayBtn">🔊 朗读本章</button>
-      <button class="btn btn-outline btn-sm" onclick="stopBibleTTS()">⏹️ 停止</button>
-      <span style="margin:0 8px;color:var(--text3)">语速:</span>
-      <button class="speed-btn active" onclick="setTTSSpeed(1)">1x</button>
-      <button class="speed-btn" onclick="setTTSSpeed(0.75)">0.75x</button>
-      <button class="speed-btn" onclick="setTTSSpeed(1.25)">1.25x</button>
-      <span class="tts-status" id="ttsStatus"></span>
-    </div>
-    <div class="bible-text" id="bibleTextArea">
-      <div style="text-align:center;padding:60px;color:var(--text3)">👆 请选择书卷和章节开始阅读</div>
-    </div>
-  `;
-}
-
-function initBibleReader() {
-  loadBibleIndex().then(() => {
-    updateBibleBooks();
-  });
-  State.tts.speaking = false;
-}
-
-async function loadBibleIndex() {
-  if (State.bibleIndex) return State.bibleIndex;
-  try {
-    const res = await fetch('data/bible-index.json');
-    State.bibleIndex = await res.json();
-  } catch (e) {
-    State.bibleIndex = getDefaultBibleIndex();
-  }
-  return State.bibleIndex;
-}
-
-function getDefaultBibleIndex() {
-  return {
-    "旧约": [
-      { name: "创世记", abbr: "创", chapters: 50 },
-      { name: "出埃及记", abbr: "出", chapters: 40 },
-      { name: "诗篇", abbr: "诗", chapters: 150 },
-      { name: "箴言", abbr: "箴", chapters: 31 },
-      { name: "以赛亚书", abbr: "赛", chapters: 66 }
-    ],
-    "新约": [
-      { name: "马太福音", abbr: "太", chapters: 28 },
-      { name: "马可福音", abbr: "可", chapters: 16 },
-      { name: "路加福音", abbr: "路", chapters: 24 },
-      { name: "约翰福音", abbr: "约", chapters: 21 },
-      { name: "使徒行传", abbr: "徒", chapters: 28 },
-      { name: "罗马书", abbr: "罗", chapters: 16 },
-      { name: "哥林多前书", abbr: "林前", chapters: 16 },
-      { name: "以弗所书", abbr: "弗", chapters: 6 },
-      { name: "腓立比书", abbr: "腓", chapters: 4 },
-      { name: "歌罗西书", abbr: "西", chapters: 4 },
-      { name: "启示录", abbr: "启", chapters: 22 }
-    ]
-  };
-}
-
-function updateBibleBooks() {
-  const testament = $('#bibleTestament')?.value || '新约';
-  const books = (State.bibleIndex || getDefaultBibleIndex())[testament] || [];
-  const sel = $('#bibleBook');
-  if (!sel) return;
-  sel.innerHTML = '<option>选择书卷</option>' + books.map(b => `<option value="${b.name}">${b.name}（${b.abbr}）</option>`).join('');
-  updateChapterSelect();
-}
-
-function updateChapterSelect() {
-  const book = $('#bibleBook')?.value;
-  const testament = $('#bibleTestament')?.value || '新约';
-  const books = (State.bibleIndex || getDefaultBibleIndex())[testament] || [];
-  const found = books.find(b => b.name === book);
-  const sel = $('#bibleChapter');
-  if (!sel) return;
-  if (!found) { sel.innerHTML = '<option>选择章节</option>'; return; }
-  sel.innerHTML = Array.from({ length: found.chapters }, (_, i) => `<option value="${i + 1}">第${i + 1}章</option>`).join('');
-}
-
-async function loadBibleChapter() {
-  const book = $('#bibleBook')?.value;
-  const chapter = $('#bibleChapter')?.value;
-  if (!book || !chapter || book === '选择书卷') return;
-  State.currentBook = book;
-  State.currentChapter = parseInt(chapter);
-
-  const area = $('#bibleTextArea');
-  if (!area) return;
-  area.innerHTML = '<div style="text-align:center;padding:40px">⏳ 加载中...</div>';
-
-  const verses = await fetchBibleChapter(book, chapter);
-  if (!verses || verses.length === 0) {
-    area.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3)">
-      暂无经文数据<br><button class="btn btn-outline btn-sm" onclick="navigate('chat');sendAIMessage('请给我读出《${book}》第${chapter}章的内容')" style="margin-top:12px">💬 让AI帮我读</button>
-    </div>`;
-    return;
-  }
-
-  area.innerHTML = `
-    <h3>${book} 第${chapter}章</h3>
-    ${verses.map(v => `<div class="verse"><span class="verse-num">${v.v}</span><span class="verse-text">${v.t}</span></div>`).join('')}
-  `;
-
-  saveBibleProgress(book, parseInt(chapter));
-}
-
-async function fetchBibleChapter(book, chapter) {
-  // 尝试API
-  try {
-    const res = await fetch(`${API}/api/bible?book=${encodeURIComponent(book)}&chapter=${chapter}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.verses) return data.verses.map(v => ({ v: v.verse, t: v.text }));
-    }
-  } catch (e) {}
-
-  // 使用内置数据
-  return getEmbeddedBibleData(book, parseInt(chapter));
-}
-
-function getEmbeddedBibleData(book, chapter) {
-  const data = EMBEDDED_BIBLE[book];
-  if (!data) return null;
-  return data[chapter] || null;
-}
-
-function saveBibleProgress(book, chapter) {
-  if (!State.user) return;
-  if (!State.user.bibleProgress) State.user.bibleProgress = {};
-  State.user.bibleProgress[book] = chapter;
-  localStorage.setItem('bible_progress', JSON.stringify(State.user.bibleProgress));
-  api('/api/user/profile', {
-    method: 'PUT',
-    body: JSON.stringify({ bibleProgress: State.user.bibleProgress })
-  }).catch(() => {});
-}
-
-// ============ TTS 语音朗读 ============
-function toggleBibleTTS() {
-  if (State.tts.speaking) { stopBibleTTS(); return; }
-  const verses = $$('.verse-text');
-  if (verses.length === 0) return;
-
-  const text = Array.from(verses).map(v => v.textContent).join('。');
-  speakVerse(text);
-}
-
-function stopBibleTTS() {
-  window.speechSynthesis.cancel();
-  State.tts.speaking = false;
-  updateTTSUI();
-}
-
-function speakVerse(text) {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'zh-CN';
-    u.rate = State.tts.speed;
-    u.onstart = () => { State.tts.speaking = true; updateTTSUI(); };
-    u.onend = () => { State.tts.speaking = false; updateTTSUI(); };
-    u.onerror = () => { State.tts.speaking = false; updateTTSUI(); };
-    State.tts.utterance = u;
-    window.speechSynthesis.speak(u);
-  } else {
-    showToast('您的浏览器不支持语音朗读');
-  }
-}
-
-function setTTSSpeed(speed) {
-  State.tts.speed = speed;
-  $$('.speed-btn').forEach(b => b.classList.toggle('active', parseFloat(b.textContent) === speed));
-  if (State.tts.speaking) {
-    stopBibleTTS();
-    toggleBibleTTS();
-  }
-}
-
-function updateTTSUI() {
-  const btn = $('#ttsPlayBtn');
-  const status = $('#ttsStatus');
-  if (btn) btn.textContent = State.tts.speaking ? '⏸️ 暂停' : '🔊 朗读本章';
-  if (status) status.textContent = State.tts.speaking ? '朗读中...' : '';
-}
-
-// ============ AI 对话 ============
-function renderChat() {
-  return `
-    <div class="section-header"><span class="sh-icon">💬</span><h2>AI 圣经问答</h2></div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">✨ AI已预配置，无需设置API密钥，直接提问即可</div>
-    <div class="quick-prompts">
-      <button class="quick-prompt" onclick="askQuick('约翰福音3:16是什么意思？')">约翰福音3:16</button>
-      <button class="quick-prompt" onclick="askQuick('如何祷告？')">如何祷告？</button>
-      <button class="quick-prompt" onclick="askQuick('什么是救恩？')">什么是救恩？</button>
-      <button class="quick-prompt" onclick="askQuick('诗篇23篇的讲解')">诗篇23篇</button>
-      <button class="quick-prompt" onclick="askQuick('耶稣是谁？')">耶稣是谁？</button>
-      <button class="quick-prompt" onclick="askQuick('圣灵的果子有哪些？')">圣灵的果子</button>
-    </div>
-    <div class="chat-container">
-      <div class="chat-messages" id="chatMessages"></div>
-      <div class="chat-input-area">
-        <textarea id="chatInput" placeholder="输入您的圣经问题..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
-        <button class="chat-send" onclick="sendChat()">➤</button>
-      </div>
-    </div>
-  `;
-}
-
-function initChat() {
-  const msgs = $('#chatMessages');
-  if (msgs && msgs.children.length === 0) {
-    State.chatHistory = [];
-    addChatMsg('ai', '你好！我是圣经小助手 🙏 你可以问我任何圣经相关的问题，我会用神的话语帮助你。');
-  }
-}
-
-function askQuick(question) {
-  const input = $('#chatInput');
-  if (input) input.value = question;
-  sendChat();
-}
-
-function sendAIMessage(msg) {
-  navigate('chat');
-  setTimeout(() => {
-    const input = $('#chatInput');
-    if (input) input.value = msg;
-    sendChat();
-  }, 300);
-}
-
-async function sendChat() {
-  const input = $('#chatInput');
-  if (!input || !input.value.trim()) return;
-  const msg = input.value.trim();
-  input.value = '';
-  input.style.height = '44px';
-  addChatMsg('user', msg);
-
-  // Loading indicator
-  const msgs = $('#chatMessages');
-  const loadingId = 'loading-' + Date.now();
-  const loadingEl = document.createElement('div');
-  loadingEl.className = 'chat-msg ai loading';
-  loadingEl.id = loadingId;
-  loadingEl.innerHTML = '<span class="dot" style="--d:0"></span><span class="dot" style="--d:1"></span><span class="dot" style="--d:2"></span>';
-  if (msgs) msgs.appendChild(loadingEl);
-
-  try {
-    const data = await api('/api/chat', {
-      method: 'POST',
-      body: JSON.stringify({ messages: [{ role: 'user', content: msg }], apiKey: DEFAULT_API_KEY || undefined })
+    document.querySelectorAll('#modelSelector button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.currentModel = btn.dataset.model;
+        localStorage.setItem('bc_model', this.currentModel);
+        document.querySelectorAll('#modelSelector button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
     });
 
-    const loading = document.getElementById(loadingId);
-    if (loading) loading.remove();
+    const input = el.querySelector('#chatInput');
+    input.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){e.preventDefault();this.sendChat();} });
+    input.addEventListener('input', () => { input.style.height='auto'; input.style.height=input.scrollHeight+'px'; });
+  }
 
-    if (data.error) {
-      // If API unavailable, use local fallback
-      addChatMsg('ai', getLocalAIResponse(msg));
-    } else {
-      addChatMsg('ai', data.content || '抱歉，请稍后再试。');
+  hideWelcome() {
+    document.getElementById('chatWelcome').style.display='none';
+    document.getElementById('chatMessages').style.display='flex';
+  }
+
+  renderChatMessages() {
+    const container = document.getElementById('chatMessages');
+    if(!container) return;
+    container.innerHTML = this.chatHistory.map((m,i) => `
+      <div class="message ${m.role}">
+        ${m.role==='ai' && m.model ? `<div class="model-tag">${MODELS[m.model]?.name || m.model}</div>` : ''}
+        ${this.escapeHtml(m.content)}
+      </div>
+    `).join('');
+    container.scrollTop = container.scrollHeight;
+  }
+
+  async sendChat() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = 'auto';
+
+    this.chatHistory.push({ role: 'user', content: text });
+    this.renderChatMessages();
+    this.saveChat();
+
+    const sendBtn = document.getElementById('sendBtn');
+    sendBtn.disabled = true;
+
+    // 先显示 loading
+    const container = document.getElementById('chatMessages');
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'message ai';
+    loadingDiv.innerHTML = '<div class="loading"><div class="loading-spinner"></div>正在思考...</div>';
+    container.appendChild(loadingDiv);
+    container.scrollTop = container.scrollHeight;
+
+    try {
+      // 尝试联网API
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: this.chatHistory.slice(-10), model: this.currentModel }),
+      }).catch(() => null);
+
+      let reply = '';
+      if (res && res.ok) {
+        const data = await res.json();
+        reply = data.reply || '';
+      } else {
+        // 降级到本地 AI 回复（仅作为备用，用户要求联网）
+        reply = this.fallbackAIReply(text);
+      }
+
+      loadingDiv.remove();
+      this.chatHistory.push({ role: 'ai', content: reply, model: this.currentModel });
+      this.renderChatMessages();
+      this.saveChat();
+      // 记录统计
+      fetch(`${API_BASE}/api/stats/chat`, { method: 'POST' }).catch(()=>{});
+    } catch(e) {
+      loadingDiv.remove();
+      const reply = this.fallbackAIReply(text);
+      this.chatHistory.push({ role: 'ai', content: reply, model: this.currentModel });
+      this.renderChatMessages();
+      this.saveChat();
     }
-  } catch (e) {
-    const loading = document.getElementById(loadingId);
-    if (loading) loading.remove();
-    addChatMsg('ai', getLocalAIResponse(msg));
+    sendBtn.disabled = false;
   }
-}
 
-function addChatMsg(role, content) {
-  const msgs = $('#chatMessages');
-  if (!msgs) return;
-  const el = document.createElement('div');
-  el.className = `chat-msg ${role}`;
-  el.textContent = content;
-  msgs.appendChild(el);
-  msgs.scrollTop = msgs.scrollHeight;
-  State.chatHistory.push({ role, content });
-}
-
-function getLocalAIResponse(msg) {
-  const responses = {
-    '爱': '根据圣经，爱是最大的恩赐。哥林多前书13章说："如今常存的有信，有望，有爱这三样，其中最大的是爱。"爱是恒久忍耐，又有恩慈。上帝就是爱（约翰一书4:8）。',
-    '祷告': '耶稣教导我们如何祷告——主祷文（马太福音6:9-13）。祷告是向神说话，不求辞藻华丽，只需真诚。可以赞美、感恩、认罪、祈求、代祷。',
-    '救恩': '救恩是上帝白白赐给人的礼物。罗马书6:23说："因为罪的工价乃是死；惟有神的恩赐，在我们的主基督耶稣里，乃是永生。"信靠耶稣就能得救。',
-    '信仰': '希伯来书11:1说："信就是所望之事的实底，是未见之事的确据。"信心是对神的完全交托，知道祂掌控一切。',
-    '平安': '耶稣说："我留下平安给你们；我将我的平安赐给你们。我所赐的，不像世人所赐的。你们心里不要忧愁，也不要胆怯。"（约翰福音14:27）',
-    '盼望': '耶利米书29:11："耶和华说：我知道我向你们所怀的意念是赐平安的意念，不是降灾祸的意念，要叫你们末后有指望。"',
-    '耶稣': '耶稣基督是神的独生子，为我们的罪钉在十字架上，第三天从死里复活。祂是道路、真理、生命（约翰福音14:6）。祂也是爱你、为你舍命的那一位。'
-  };
-
-  for (const [key, resp] of Object.entries(responses)) {
-    if (msg.includes(key)) return resp;
+  fallbackAIReply(text) {
+    const lower = text.toLowerCase();
+    if (lower.includes('神') || lower.includes('god')) return '神是自有永有的，是创造天地的主。祂爱世人，甚至将祂的独生子赐给我们，叫一切信祂的不至灭亡，反得永生。你想更深入了解哪方面？';
+    if (lower.includes('耶稣') || lower.includes('jesus')) return '耶稣是基督，是永生神的儿子。祂为我们钉死在十字架上，第三天复活，使我们因信祂称义。祂是道路、真理、生命。';
+    if (lower.includes('祷告') || lower.includes('pray')) return '祷告是与神对话。你可以随时向神倾诉，祂必垂听。圣经说："你们祈求，就给你们；寻找，就寻见；叩门，就给你们开门。"（马太福音7:7）';
+    if (lower.includes('罪') || lower.includes('sin')) return '世人都犯了罪，亏缺了神的荣耀。但感谢神，祂在基督里赐给我们救赎。认罪悔改，信靠耶稣，罪就得赦免。';
+    if (lower.includes('爱') || lower.includes('love')) return '神就是爱。祂的爱是无条件的、永恒的。罗马书5:8说："唯有基督在我们还作罪人的时候为我们死，神的爱就在此向我们显明了。"';
+    if (lower.includes('平安') || lower.includes('peace')) return '耶稣说："我留下平安给你们，我将我的平安赐给你们。"（约翰福音14:27）真正的平安来自与神和好。';
+    return '这是一个很好的问题。请稍等，我正在努力为你寻找答案...目前AI服务可能暂时不可用，请检查网络连接。你也可以尝试切换其他AI模型。';
   }
-  return `关于"${msg.substring(0,30)}..."这个问题，我引用了圣经中相关的经文来帮助你理解。你可以进一步点击"阅读圣经"查看相关章节，或在祷告中寻求神的指引。🙏`;
-}
 
-// ============ 祷告 ============
-function renderPrayer() {
-  return `
-    <div class="section-header"><span class="sh-icon">🙏</span><h2>祷告与灵修</h2></div>
-    <div class="prayer-cats" id="prayerCats"></div>
-    <div class="prayer-grid" id="prayerGrid">
-      <div style="text-align:center;padding:40px;color:var(--text3)">加载中...</div>
-    </div>
-  `;
-}
+  saveChat() { localStorage.setItem('bc_chat', JSON.stringify(this.chatHistory.slice(-50))); }
 
-async function initPrayer() {
-  loadPrayers();
-}
+  // ======== 圣经阅读器 ========
+  async loadBibleData() {
+    if (this.bibleData) return;
+    try {
+      const res = await fetch('data/bible-full.json');
+      this.bibleData = await res.json();
+    } catch(e) {
+      this.bibleData = { OT: [], NT: [] };
+    }
+  }
 
-async function loadPrayers() {
-  if (!State.prayers) {
+  renderBiblePage(el) {
+    if (!this.bibleStack.length) this.bibleStack.push({ type: 'home' });
+    const top = this.bibleStack[this.bibleStack.length - 1];
+
+    if (top.type === 'home') {
+      el.innerHTML = `
+        <div class="page-header"><h2>&#x1F4D6; 圣经</h2><span style="color:var(--text2);font-size:13px">${this.bibleData?this.bibleData.OT.length+this.bibleData.NT.length+'卷':''}</span></div>
+        <div class="bible-nav"><button class="active" onclick="app.showBibleTestament('OT')">旧约</button><button onclick="app.showBibleTestament('NT')">新约</button></div>
+        <div class="page-content" id="bibleContent"></div>`;
+      this.showBibleTestament('OT');
+    } else if (top.type === 'testament') {
+      this.renderBookList(top.data);
+    } else if (top.type === 'book') {
+      this.renderChapterList(top.data);
+    } else if (top.type === 'chapter') {
+      this.renderChapterContent(top.data);
+    }
+  }
+
+  showBibleTestament(testament) {
+    const content = document.getElementById('bibleContent');
+    if (!content || !this.bibleData) return;
+    const books = this.bibleData[testament] || [];
+    content.innerHTML = `
+      <div class="book-list">
+        ${books.map((b, i) => `
+          <div class="book-btn" onclick="app.selectBook('${testament}',${i})">
+            <div>${b.zh}</div>
+            <div class="abbr">${b.abbr}</div>
+          </div>
+        `).join('')}
+      </div>`;
+    // Update nav
+    document.querySelectorAll('.bible-nav button').forEach(btn => {
+      btn.classList.toggle('active', (btn.textContent.includes('旧') && testament==='OT') || (btn.textContent.includes('新') && testament==='NT'));
+    });
+  }
+
+  selectBook(testament, bookIndex) {
+    if (!this.bibleData) return;
+    const book = this.bibleData[testament][bookIndex];
+    this.bibleStack.push({ type: 'book', data: { testament, bookIndex, book } });
+    this.renderBiblePage(document.getElementById('page-bible'));
+  }
+
+  renderBookList(data) {
+    const el = document.getElementById('page-bible');
+    el.innerHTML = `
+      <div class="page-header">
+        <button class="back-btn" onclick="app.bibleBack()">&#x2190; 返回</button>
+        <h2>${data.book.zh}</h2>
+        <span></span>
+      </div>
+      <div class="page-content"><div class="chapter-grid">
+        ${data.book.chapters.map((c,i) => `<div class="chapter-btn" onclick="app.selectChapter(${i})">${c.chapter}</div>`).join('')}
+      </div></div>`;
+  }
+
+  selectChapter(chapterIndex) {
+    const top = this.bibleStack[this.bibleStack.length-1];
+    if (!top || top.type !== 'book') return;
+    const chapter = top.data.book.chapters[chapterIndex];
+    this.bibleStack.push({ type: 'chapter', data: { ...top.data, chapterIndex, chapter } });
+    this.renderBiblePage(document.getElementById('page-bible'));
+  }
+
+  renderChapterContent(data) {
+    const el = document.getElementById('page-bible');
+    const book = data.book;
+    const chapter = data.chapter;
+    el.innerHTML = `
+      <div class="page-header">
+        <button class="back-btn" onclick="app.bibleBack()">&#x2190; 返回</button>
+        <h2>${book.zh} ${chapter.chapter}章</h2>
+        <span></span>
+      </div>
+      <div class="page-content">
+        <div class="verse-content">
+          <div class="lang-toggle">
+            <button class="${this.langMode==='zh'?'active':''}" onclick="app.setLang('zh')">中文</button>
+            <button class="${this.langMode==='both'?'active':''}" onclick="app.setLang('both')">对照</button>
+            <button class="${this.langMode==='en'?'active':''}" onclick="app.setLang('en')">English</button>
+          </div>
+          ${chapter.verses.map(v => `
+            <div class="verse-line">
+              <span class="ref">${v.ref}</span>
+              ${this.langMode!=='en' ? `<div class="zh">${v.zh}</div>` : ''}
+              ${this.langMode!=='zh' ? `<div class="en">${v.en}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div class="verse-actions">
+          <button onclick="app.speakChapter()">&#x1F50A; 朗读</button>
+          <button onclick="app.prevChapter()">&#x2190; 上一章</button>
+          <button onclick="app.nextChapter()">&#x2192; 下一章</button>
+        </div>
+      </div>`;
+  }
+
+  setLang(mode) {
+    this.langMode = mode;
+    localStorage.setItem('bc_lang', mode);
+    const top = this.bibleStack[this.bibleStack.length-1];
+    if (top && top.type === 'chapter') this.renderChapterContent(top.data);
+  }
+
+  bibleBack() {
+    this.bibleStack.pop();
+    const el = document.getElementById('page-bible');
+    if (el) this.renderBiblePage(el);
+  }
+
+  prevChapter() {
+    const top = this.bibleStack[this.bibleStack.length-1];
+    if (!top || top.type !== 'chapter') return;
+    if (top.data.chapterIndex > 0) {
+      this.bibleStack.pop();
+      this.selectChapter(top.data.chapterIndex - 1);
+    }
+  }
+  nextChapter() {
+    const top = this.bibleStack[this.bibleStack.length-1];
+    if (!top || top.type !== 'chapter') return;
+    if (top.data.chapterIndex < top.data.book.chapters.length - 1) {
+      this.bibleStack.pop();
+      this.selectChapter(top.data.chapterIndex + 1);
+    }
+  }
+
+  speakChapter() {
+    const top = this.bibleStack[this.bibleStack.length-1];
+    if (!top || top.type !== 'chapter') return;
+    const text = top.data.chapter.verses.map(v => this.langMode==='en' ? v.en : v.zh).join('。');
+    this.speakText(text);
+  }
+
+  speakText(text) {
+    if (!window.speechSynthesis) { this.showToast('您的浏览器不支持语音朗读'); return; }
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = this.langMode === 'en' ? 'en-US' : 'zh-CN';
+    utter.rate = 0.9;
+    utter.pitch = 1.0;
+    const voices = window.speechSynthesis.getVoices();
+    const pref = voices.find(v => v.lang.includes(this.langMode==='en'?'en':'zh'));
+    if (pref) utter.voice = pref;
+    window.speechSynthesis.speak(utter);
+    this.ttsSpeaking = true;
+    utter.onend = () => { this.ttsSpeaking = false; };
+  }
+
+  // ======== 每日金句 ========
+  renderDailyPage(el) {
+    const verses = [
+      { ref: '约翰福音 3:16', zh: '神爱世人，甚至将他的独生子赐给他们，叫一切信他的，不至灭亡，反得永生。', en: 'For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.' },
+      { ref: '诗篇 23:1', zh: '耶和华是我的牧者，我必不至缺乏。', en: 'The Lord is my shepherd, I lack nothing.' },
+      { ref: '箴言 3:5-6', zh: '你要专心仰赖耶和华，不可倚靠自己的聪明，在你一切所行的事上都要认定他，他必指引你的路。', en: 'Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight.' },
+      { ref: '耶利米书 29:11', zh: '耶和华说：我知道我向你们所怀的意念是赐平安的意念，不是降灾祸的意念，要叫你们末后有指望。', en: 'For I know the plans I have for you, declares the Lord, plans to prosper you and not to harm you, plans to give you hope and a future.' },
+      { ref: '腓立比书 4:13', zh: '我靠着那加给我力量的，凡事都能做。', en: 'I can do all this through him who gives me strength.' },
+      { ref: '罗马书 8:28', zh: '我们晓得万事都互相效力，叫爱神的人得益处，就是按他旨意被召的人。', en: 'And we know that in all things God works for the good of those who love him, who have been called according to his purpose.' },
+      { ref: '马太福音 11:28', zh: '凡劳苦担重担的人可以到我这里来，我就使你们得安息。', en: 'Come to me, all you who are weary and burdened, and I will give you rest.' },
+      { ref: '以赛亚书 40:31', zh: '但那等候耶和华的必从新得力。他们必如鹰展翅上腾；他们奔跑却不困倦，行走却不疲乏。', en: 'But those who hope in the Lord will renew their strength. They will soar on wings like eagles; they will run and not grow weary, they will walk and not be faint.' },
+      { ref: '哥林多前书 13:13', zh: '如今常存的有信，有望，有爱这三样，其中最大的是爱。', en: 'And now these three remain: faith, hope and love. But the greatest of these is love.' },
+      { ref: '希伯来书 11:1', zh: '信是所望之事的实底，是未见之事的确据。', en: 'Now faith is confidence in what we hope for and assurance about what we do not see.' },
+    ];
+    const dayIndex = Math.floor(Date.now()/86400000) % verses.length;
+    const v = verses[dayIndex];
+    const today = new Date().toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+
+    el.innerHTML = `
+      <div class="page-header"><h2>&#x2728; 每日金句</h2><span style="color:var(--text2);font-size:13px">${today}</span></div>
+      <div class="page-content">
+        <div class="daily-card">
+          <div class="date">${today}</div>
+          <div class="ref">${v.ref}</div>
+          <div class="verse-zh">${v.zh}</div>
+          <div class="verse-en">${v.en}</div>
+        </div>
+        <div class="share-card">
+          <h3 style="color:var(--accent);margin-bottom:10px;font-size:16px">&#x1F4E4; 分享到朋友圈</h3>
+          <textarea id="shareThought" placeholder="写下你的感悟...（可选）"></textarea>
+          <div class="preview" id="sharePreview">
+            <h4>&#x2728; 每日金句</h4>
+            <p style="font-size:18px;color:var(--text);margin:12px 0">${v.zh}</p>
+            <p style="font-size:14px;color:var(--text2)">&#x2014; ${v.ref}</p>
+            <p class="link">来自 Bible Chat (biblechat.cc)</p>
+          </div>
+          <div class="share-actions">
+            <button onclick="app.generateShareImage()">&#x1F4F8; 生成图片</button>
+            <button class="secondary" onclick="app.shareText()">&#x1F4E4; 分享文字</button>
+          </div>
+        </div>
+      </div>`;
+    this.currentVerse = v;
+  }
+
+  generateShareImage() {
+    const v = this.currentVerse;
+    const thought = document.getElementById('shareThought').value.trim();
+    const canvas = document.createElement('canvas');
+    canvas.width = 750; canvas.height = 1334;
+    const ctx = canvas.getContext('2d');
+
+    // Background gradient
+    const grad = ctx.createLinearGradient(0,0,0,1334);
+    grad.addColorStop(0,'#1a1a3e'); grad.addColorStop(0.5,'#2a2a5e'); grad.addColorStop(1,'#1a1a3e');
+    ctx.fillStyle = grad; ctx.fillRect(0,0,750,1334);
+
+    // Decorative elements
+    ctx.fillStyle = 'rgba(255,215,0,0.1)';
+    ctx.beginPath(); ctx.arc(375,200,150,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(100,1200,80,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(650,1100,60,0,Math.PI*2); ctx.fill();
+
+    // Title
+    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 32px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('&#x2728; 每日金句', 375, 120);
+    ctx.fillStyle = '#a0a0b0'; ctx.font = '22px sans-serif';
+    ctx.fillText(new Date().toLocaleDateString('zh-CN'), 375, 160);
+
+    // Cross decoration
+    ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(375,200); ctx.lineTo(375,280); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(340,230); ctx.lineTo(410,230); ctx.stroke();
+
+    // Verse text
+    ctx.fillStyle = '#e8e8e8'; ctx.font = '28px sans-serif'; ctx.textAlign = 'center';
+    this.wrapText(ctx, v.zh, 375, 350, 650, 42);
+    ctx.fillStyle = '#a0a0b0'; ctx.font = '22px sans-serif'; ctx.fontStyle = 'italic';
+    this.wrapText(ctx, v.en, 375, 580, 650, 36);
+    ctx.fontStyle = 'normal';
+    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`&#x2014; ${v.ref}`, 375, 740);
+
+    // Thought
+    if (thought) {
+      ctx.fillStyle = '#c9a227'; ctx.font = 'italic 22px sans-serif';
+      ctx.fillText('&#x201C;' + thought + '&#x201D;', 375, 820);
+    }
+
+    // Footer
+    ctx.fillStyle = '#666'; ctx.font = '18px sans-serif';
+    ctx.fillText('来自 Bible Chat &#x2014; biblechat.cc', 375, 1260);
+    ctx.fillStyle = '#ffd700'; ctx.font = '14px sans-serif';
+    ctx.fillText('&#x271D; 愿神赐福你的一天', 375, 1290);
+
+    // Save
+    const link = document.createElement('a');
+    link.download = `biblechat-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    this.showToast('图片已生成');
+  }
+
+  wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(''); let line = ''; let testLine = '';
+    for (let n = 0; n < words.length; n++) {
+      testLine += words[n];
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && n > 0) {
+        ctx.fillText(line, x, y); line = words[n]; testLine = words[n]; y += lineHeight;
+      } else { line = testLine; }
+    }
+    ctx.fillText(line, x, y);
+  }
+
+  shareText() {
+    const v = this.currentVerse;
+    const thought = document.getElementById('shareThought').value.trim();
+    let text = `&#x2728; 每日金句\n\n${v.zh}\n&#x2014; ${v.ref}\n`;
+    if (thought) text += `\n&#x201C;${thought}&#x201D;\n`;
+    text += `\n来自 Bible Chat (biblechat.cc)`;
+    if (navigator.share) {
+      navigator.share({ title: '每日金句', text: text });
+    } else {
+      navigator.clipboard.writeText(text).then(() => this.showToast('已复制到剪贴板'));
+    }
+  }
+
+  // ======== 祷告 ========
+  async loadPrayersData() {
+    if (this.prayersData) return;
     try {
       const res = await fetch('data/prayers.json');
-      State.prayers = await res.json();
-    } catch (e) {
-      State.prayers = getDefaultPrayers();
+      this.prayersData = await res.json();
+    } catch(e) {
+      this.prayersData = { categories: [], prayers: [] };
     }
   }
-  renderPrayerUI();
-}
 
-function getDefaultPrayers() {
-  return {
-    categories: [
-      { id: 'morning', name: '晨祷', icon: 'sunrise' },
-      { id: 'evening', name: '晚祷', icon: 'moon' },
-      { id: 'gratitude', name: '感恩', icon: 'heart' },
-      { id: 'intercession', name: '代祷', icon: 'hands' },
-      { id: 'guidance', name: '寻求', icon: 'compass' },
-      { id: 'peace', name: '平安', icon: 'dove' }
-    ],
-    prayers: [
-      { id: 'm1', cat: 'morning', title: '新的一天', content: '亲爱的天父，感谢你赐给我这新的一天。当我睁开双眼，就看到你所创造的阳光与美好。求你今日引导我的脚步，让我行事为人都蒙你喜悦。奉主耶稣基督的名祷告，阿们。', ref: '诗篇 118:24' },
-      { id: 'm2', cat: 'morning', title: '每日力量', content: '主啊，清晨我来到你的面前，将今天完全交托在你的手中。求你赐我属天的力量，让我不靠自己的能力，而是依靠你的大能。奉主耶稣的名祈求，阿们。', ref: '以赛亚书 40:31' },
-      { id: 'e1', cat: 'evening', title: '安歇交托', content: '天父，感谢你今天一路的保守和带领。此刻我将一天的劳苦重担都卸给你，因为你的担子是轻省的。求你赐我安眠，让我在你怀中得着真正的安息。奉主耶稣的名祷告，阿们。', ref: '马太福音 11:28' },
-      { id: 'e2', cat: 'evening', title: '夜间反思', content: '主啊，在你面前我回顾今天的一切。如果我有什么亏欠，求你赦免。求你赐我一颗谦卑受教的心，让我明天能比今天更靠近你。奉耶稣的名祈求，阿们。', ref: '诗篇 139:23-24' },
-      { id: 'g1', cat: 'gratitude', title: '感恩的心', content: '亲爱的天父，我要感恩，为生命中一切的美善。感谢你的创造、救赎、保守和供应。求你使我常存感恩的心，凡事谢恩。奉主耶稣的名祷告，阿们。', ref: '帖撒罗尼迦前书 5:16-18' },
-      { id: 'g2', cat: 'gratitude', title: '数算恩典', content: '主啊，当我数算你的恩典，才发现你的祝福如繁星不可胜数。感谢你赐我生命、气息、家人和朋友。每一个呼吸都是恩典。奉主耶稣的名祷告，阿们。', ref: '诗篇 103:1-5' },
-      { id: 'i1', cat: 'intercession', title: '为家人', content: '天父，今天我将我的家人完全交托在你的手中。保守他们的身体平安健康，愿你的救恩临到家中每一个尚未信主的亲人。奉主耶稣的名祷告，阿们。', ref: '使徒行传 16:31' },
-      { id: 'i2', cat: 'intercession', title: '为教会', content: '亲爱的天父，我为你的教会祷告。求你保守教会合一，让弟兄姊妹彼此相爱。愿你保守你的教会远离异端和分裂。奉主耶稣的名祷告，阿们。', ref: '以弗所书 4:1-6' },
-      { id: 's1', cat: 'guidance', title: '寻求方向', content: '主啊，我站在人生的十字路口，不知该如何选择。求你赐我智慧，指引我的道路。我不要倚靠自己的聪明，我要专心仰赖你。奉主耶稣的名祷告，阿们。', ref: '箴言 3:5-6' },
-      { id: 's2', cat: 'guidance', title: '职场求助', content: '天父，我把我的工作完全交托给你。赐我智慧处理工作中的难题，让我不是为讨人喜悦而工作，而是像为主做的一样尽心尽力。奉主耶稣的名祷告，阿们。', ref: '歌罗西书 3:23' },
-      { id: 'p1', cat: 'peace', title: '内心平安', content: '主耶稣，你留下平安给我们，你所赐的平安不像世人所赐的。求你平静我内心的风暴，赐我出人意外的平安。奉主耶稣的名祷告，阿们。', ref: '约翰福音 14:27' },
-      { id: 'p2', cat: 'peace', title: '戒除焦虑', content: '天父，你教导我当一无挂虑。我承认我常被忧虑捆绑。求你帮助我将一切的忧虑卸给你，因为你顾念我。奉主耶稣的名祷告，阿们。', ref: '腓立比书 4:6-7' }
-    ]
-  };
-}
-
-function renderPrayerUI() {
-  const cats = $('#prayerCats');
-  if (cats) {
-    cats.innerHTML = State.prayers.categories.map(c => `<button class="prayer-cat" data-cat="${c.id}" onclick="filterPrayers('${c.id}')">${c.icon || '🙏'} ${c.name}</button>`).join('');
-    cats.querySelector('.prayer-cat')?.classList.add('active');
+  renderPrayerPage(el) {
+    if (!this.prayersData) { el.innerHTML = '<div class="loading"><div class="loading-spinner"></div>加载中...</div>'; return; }
+    const cats = this.prayersData.categories || [];
+    el.innerHTML = `
+      <div class="page-header"><h2>&#x1F64F; 祷告</h2></div>
+      <div class="page-content">
+        <div class="prayer-list">
+          ${cats.map(c => `
+            <div class="prayer-item" onclick="app.showPrayerCategory('${c.id}')">
+              <h4>${c.name}</h4>
+              <p>${c.desc}</p>
+            </div>
+          `).join('')}
+        </div>
+        <div id="prayerDetail"></div>
+      </div>`;
   }
-  filterPrayers('all');
-}
 
-function filterPrayers(cat) {
-  $$('.prayer-cat').forEach(c => c.classList.toggle('active', c.dataset.cat === cat));
-  const grid = $('#prayerGrid');
-  if (!grid) return;
-  const prayers = cat === 'all' ? State.prayers.prayers : State.prayers.prayers.filter(p => p.cat === cat);
-  if (prayers.length === 0) prayers.push(...State.prayers.prayers);
-  grid.innerHTML = prayers.slice(0, 20).map(p => `
-    <div class="prayer-card" onclick="showPrayerDetail(${JSON.stringify(p).replace(/"/g,'&quot;')})">
-      <h4>${p.title}</h4>
-      <div class="card-desc">${p.content.substring(0,60)}...</div>
-      <div class="card-ref">📖 ${p.ref}</div>
-    </div>
-  `).join('');
-}
-
-function showPrayerDetail(prayer) {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-  overlay.innerHTML = `
-    <div class="modal" style="background:var(--surface);border:1px solid rgba(255,255,255,.06)">
-      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
-      <h2 style="color:var(--text)">${prayer.title}</h2>
-      <div style="color:var(--text2);font-size:13px;margin-bottom:16px">📖 ${prayer.ref}</div>
-      <div style="color:var(--text);line-height:2;font-size:15px;white-space:pre-wrap">${prayer.content}</div>
-      <div class="card-actions" style="margin-top:20px">
-        <button class="btn btn-gold btn-sm" onclick="shareVerse('${prayer.content.replace(/'/g,"\\'")}','${prayer.ref}')">📤 分享</button>
-        <button class="btn btn-outline btn-sm" onclick="copyText('${prayer.content.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">📋 复制</button>
-        <button class="btn btn-outline btn-sm" onclick="speakVerse('${prayer.content.replace(/'/g,"\\'").substring(0,200)}')">🔊 朗读</button>
+  showPrayerCategory(catId) {
+    const prayers = (this.prayersData.prayers || []).filter(p => p.cat === catId);
+    const container = document.getElementById('prayerDetail');
+    if (!container) return;
+    container.innerHTML = prayers.map((p, i) => `
+      <div class="prayer-item" onclick="app.showPrayerDetail('${catId}',${i})">
+        <h4>${p.title}</h4>
+        <p>${p.ref}</p>
       </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-}
-
-// ============ 播客 ============
-function renderPodcast() {
-  return `
-    <div class="section-header"><span class="sh-icon">🎙️</span><h2>经文播客</h2></div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:16px">AI将经文分析成播客式讲解，可播放音频</div>
-    <div class="podcast-player">
-      <div class="podcast-info">
-        <h3 id="podcastTitle">选择经文开始</h3>
-        <p id="podcastSub">AI将为你深度讲解</p>
-      </div>
-      <div class="podcast-controls">
-        <button class="podcast-btn btn-outline" onclick="podcastPrev()">⏮</button>
-        <button class="podcast-btn podcast-play" id="podcastPlayBtn" onclick="togglePodcast()">▶️</button>
-        <button class="podcast-btn btn-outline" onclick="podcastNext()">⏭</button>
-      </div>
-      <div class="podcast-progress" onclick="podcastSeek(event)">
-        <div class="podcast-progress-bar" id="podcastProgressBar"></div>
-      </div>
-      <div class="podcast-time">
-        <span id="podcastCurrentTime">00:00</span>
-        <span id="podcastTotalTime">00:00</span>
-      </div>
-    </div>
-    <div class="podcast-transcript" id="podcastTranscript">
-      <p style="color:var(--text3)">选择一段经文，AI将为你生成播客式讲解 👇</p>
-    </div>
-    <div class="quick-prompts" style="margin-top:16px">
-      <button class="quick-prompt" onclick="generatePodcast('约翰福音3:1-21')">约翰福音3章</button>
-      <button class="quick-prompt" onclick="generatePodcast('诗篇23篇')">诗篇23篇</button>
-      <button class="quick-prompt" onclick="generatePodcast('罗马书8:28-39')">罗马书8章</button>
-      <button class="quick-prompt" onclick="generatePodcast('马太福音5:1-12')">八福</button>
-      <button class="quick-prompt" onclick="generatePodcast('哥林多前书13章')">爱的诗篇</button>
-    </div>
-  `;
-}
-
-function initPodcast() {
-  State.podcast.playing = false;
-  State.podcast.segments = [];
-  State.podcast.currentIdx = 0;
-}
-
-async function generatePodcast(passage) {
-  $('#podcastTitle').textContent = '⏳ 正在生成...';
-  $('#podcastSub').textContent = passage;
-  $('#podcastTranscript').innerHTML = '<p style="text-align:center;color:var(--text3);padding:20px">AI正在为你深度分析经文...</p>';
-
-  try {
-    const data = await api('/api/podcast', {
-      method: 'POST',
-      body: JSON.stringify({ passage, style: 'podcast', apiKey: DEFAULT_API_KEY || undefined })
-    });
-    if (!data.error && data.segments) {
-      State.podcast.segments = data.segments;
-      State.podcast.currentIdx = 0;
-      $('#podcastTitle').textContent = '📖 ' + passage;
-      $('#podcastSub').textContent = `共 ${data.segments.length} 段`;
-      $('#podcastTranscript').innerHTML = data.segments.map((s, i) =>
-        `<p style="padding:8px;margin:4px 0;border-radius:6px" id="podSeg${i}">${s.text}</p>`
-      ).join('');
-      highlightPodcastSegment(0);
-    } else {
-      // 本地播客内容
-      setLocalPodcastContent(passage);
-    }
-  } catch (e) {
-    setLocalPodcastContent(passage);
+    `).join('');
   }
-}
 
-function setLocalPodcastContent(passage) {
-  const data = getLocalPodcastData(passage);
-  State.podcast.segments = data;
-  State.podcast.currentIdx = 0;
-  $('#podcastTitle').textContent = '📖 ' + passage;
-  $('#podcastSub').textContent = `共 ${data.length} 段（本地讲解）`;
-  $('#podcastTranscript').innerHTML = data.map((s, i) =>
-    `<p style="padding:8px;margin:4px 0;border-radius:6px" id="podSeg${i}">${s.text}</p>`
-  ).join('');
-}
-
-function getLocalPodcastData(passage) {
-  return [
-    { text: `亲爱的弟兄姊妹，欢迎收听今日经文分享。我们一起来看今天的内容。`, duration: 10 },
-    { text: `这段经文来自${passage}。让我们一起聆听神的话语，感受祂的爱和恩典。`, duration: 12 },
-    { text: `每一段圣经经文都蕴含着丰富的智慧和启示。当我们用心去读、去思考时，就能从中得到力量和指引。`, duration: 15 },
-    { text: `神的话语是我们脚前的灯、路上的光。愿我们今天都能在神的话语中得到喂养和更新。`, duration: 12 },
-    { text: `感谢大家的聆听。让我们一起做个简短的祷告：主啊，感谢你的话语照亮我们的生命。求你帮助我们每日在你的话语中成长，活出你喜悦的样式。奉耶稣的名，阿们。`, duration: 18 }
-  ];
-}
-
-function togglePodcast() {
-  if (State.podcast.segments.length === 0) return;
-  if (State.podcast.playing) {
-    pausePodcast();
-  } else {
-    playPodcast();
+  showPrayerDetail(catId, idx) {
+    const prayers = (this.prayersData.prayers || []).filter(p => p.cat === catId);
+    const p = prayers[idx];
+    if (!p) return;
+    const container = document.getElementById('prayerDetail');
+    container.innerHTML = `
+      <div class="prayer-detail">
+        <div class="prayer-title">${p.title}</div>
+        <div>${p.content}</div>
+        <div style="text-align:center;margin-top:16px;color:var(--accent2);font-size:14px">&#x2014; ${p.ref}</div>
+        <div class="verse-actions" style="margin-top:16px">
+          <button onclick="app.speakText('${p.content.replace(/'/g,"\'")}')">&#x1F50A; 朗读</button>
+          <button onclick="app.renderPrayerPage(document.getElementById('page-prayer'))">&#x2190; 返回</button>
+        </div>
+      </div>`;
   }
-}
 
-function playPodcast() {
-  if (State.podcast.currentIdx >= State.podcast.segments.length) return;
-  State.podcast.playing = true;
-  $('#podcastPlayBtn').textContent = '⏸️';
-  const seg = State.podcast.segments[State.podcast.currentIdx];
-  highlightPodcastSegment(State.podcast.currentIdx);
-  speakVerse(seg.text);
-  State.podcast.timer = setTimeout(() => {
-    State.podcast.currentIdx++;
-    if (State.podcast.currentIdx < State.podcast.segments.length) {
-      playPodcast();
-    } else {
-      stopPodcast();
-    }
-  }, seg.duration * 1000);
-}
-
-function pausePodcast() {
-  State.podcast.playing = false;
-  $('#podcastPlayBtn').textContent = '▶️';
-  window.speechSynthesis.cancel();
-  clearTimeout(State.podcast.timer);
-}
-
-function stopPodcast() {
-  State.podcast.playing = false;
-  State.podcast.currentIdx = 0;
-  $('#podcastPlayBtn').textContent = '▶️';
-  window.speechSynthesis.cancel();
-  clearTimeout(State.podcast.timer);
-}
-
-function podcastPrev() {
-  State.podcast.currentIdx = Math.max(0, State.podcast.currentIdx - 1);
-  highlightPodcastSegment(State.podcast.currentIdx);
-}
-
-function podcastNext() {
-  State.podcast.currentIdx = Math.min(State.podcast.segments.length - 1, State.podcast.currentIdx + 1);
-  highlightPodcastSegment(State.podcast.currentIdx);
-}
-
-function highlightPodcastSegment(idx) {
-  for (let i = 0; i < State.podcast.segments.length; i++) {
-    const el = document.getElementById(`podSeg${i}`);
-    if (el) el.style.background = i === idx ? 'rgba(139,92,246,.15)' : 'transparent';
+  // ======== 更多 ========
+  renderMorePage(el) {
+    el.innerHTML = `
+      <div class="page-header"><h2>&#x2699;&#xFE0F; 更多</h2></div>
+      <div class="page-content">
+        <div class="user-form">
+          ${this.user ? `<div class="user-info">
+            <p><strong style="color:var(--accent)">${this.user.name}</strong></p>
+            <p>${this.user.email}</p>
+            <button onclick="app.logout()">退出登录</button>
+          </div>` : `
+            <input type="text" id="regName" placeholder="你的姓名">
+            <input type="email" id="regEmail" placeholder="邮箱">
+            <input type="tel" id="regPhone" placeholder="手机号（可选）">
+            <button onclick="app.register()">注册 / 登录</button>
+          `}
+        </div>
+        <div class="statement-card">
+          <h3>&#x1F64F; 信仰告白</h3>
+          <p>我相信独一的真神，圣父、圣子、圣灵三位一体。我相信耶稣基督是神的独生子，为拯救世人的罪钉死在十字架上，第三天复活，将来必再来。我相信圣经是神所默示的，是信仰与生活的最高准则。</p>
+          <p style="color:var(--text2);font-size:13px;margin-top:8px">&#x2014; 本网站持守正统基督教信仰立场</p>
+        </div>
+        <div class="statement-card">
+          <h3>&#x1F4B8; 支持我们</h3>
+          <p>Bible Chat 是一款免费事工工具，旨在帮助更多人认识神的话语。如果你觉得这个工具有帮助，欢迎通过以下方式支持我们：</p>
+          <p style="color:var(--accent);margin-top:8px">&#x1F4B3; 支付宝: xbtds02@example.com</p>
+          <p style="color:var(--accent)">&#x1F4B3; 微信支付: BibleChat</p>
+          <p style="color:var(--text2);font-size:13px;margin-top:8px">每一笔支持都将用于服务器维护和平台开发，让更多人能够免费使用。</p>
+        </div>
+        <div class="statement-card">
+          <h3>&#x1F399; AI 播客</h3>
+          <div class="podcast-area">
+            <textarea id="podcastInput" placeholder="输入一段经文或灵修内容，生成播客式朗读..."></textarea>
+            <div class="podcast-controls">
+              <button onclick="app.generatePodcast()">&#x1F3A4; 生成播客</button>
+              <div class="speed"><span>&#x1F509; 语速:</span><input type="range" id="podcastSpeed" min="0.5" max="1.5" step="0.1" value="0.9"></div>
+              <button class="secondary" onclick="app.stopPodcast()">&#x23F9; 停止</button>
+            </div>
+            <div class="podcast-script" id="podcastScript" style="display:none"></div>
+          </div>
+        </div>
+        <div class="statement-card">
+          <h3>&#x1F6E1; 管理后台</h3>
+          <button onclick="app.showAdmin()" style="width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--accent);cursor:pointer;font-size:15px">进入管理面板</button>
+        </div>
+        <div class="statement-card">
+          <h3>&#x1F4DA; 关于</h3>
+          <p>Bible Chat v3.0</p>
+          <p style="color:var(--text2);font-size:13px">&#xA9; 2026 Bible Chat. 以恩典和真理服事。</p>
+          <p style="color:var(--text2);font-size:13px">域名: biblechat.cc</p>
+        </div>
+      </div>`;
   }
-}
 
-// ============ 用户系统 ============
-function showAuthModal() {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-  overlay.innerHTML = State.user ? renderUserProfile() : renderAuthForm();
-  document.body.appendChild(overlay);
-}
-
-function renderAuthForm() {
-  return `
-    <div class="modal" style="background:var(--surface);border:1px solid rgba(255,255,255,.06)">
-      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
-      <h2 style="color:var(--text);margin-bottom:24px">👤 账户</h2>
-      <div id="authTabs" style="display:flex;gap:0;margin-bottom:20px">
-        <button class="prayer-cat active" onclick="switchAuthTab('login')" style="flex:1;text-align:center;border-radius:20px 0 0 20px">登录</button>
-        <button class="prayer-cat" onclick="switchAuthTab('register')" style="flex:1;text-align:center;border-radius:0 20px 20px 0">注册</button>
-      </div>
-      <div id="loginForm">
-        <div class="input-group"><label>用户名</label><input type="text" id="loginUsername" placeholder="输入用户名"></div>
-        <div class="input-group"><label>密码</label><input type="password" id="loginPassword" placeholder="输入密码"></div>
-        <button class="btn btn-gold" onclick="doLogin()" style="width:100%;margin-top:8px">登 录</button>
-      </div>
-      <div id="registerForm" style="display:none">
-        <div class="input-group"><label>用户名</label><input type="text" id="regUsername" placeholder="2-20个字符"></div>
-        <div class="input-group"><label>密码</label><input type="password" id="regPassword" placeholder="至少4个字符"></div>
-        <div class="input-group"><label>邮箱 (选填)</label><input type="email" id="regEmail" placeholder="your@email.com"></div>
-        <button class="btn btn-gold" onclick="doRegister()" style="width:100%;margin-top:8px">注 册</button>
-      </div>
-      <div style="text-align:center;margin-top:12px">
-        <button style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer" onclick="this.closest('.modal-overlay').remove()">先看看，稍后登录</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderUserProfile() {
-  return `
-    <div class="modal" style="background:var(--surface);border:1px solid rgba(255,255,255,.06)">
-      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
-      <h2 style="color:var(--text);margin-bottom:24px">👤 我的账户</h2>
-      <div style="color:var(--text);font-size:16px;margin-bottom:8px">${State.user.username}</div>
-      <div style="color:var(--text2);font-size:13px;margin-bottom:20px">${State.user.email || ''}</div>
-      <div class="stats-row">
-        <div class="stat-badge">📖 ${State.user.bookmarks?.length || 0} 书签</div>
-        <div class="stat-badge">📝 ${State.user.notes?.length || 0} 笔记</div>
-      </div>
-      <div style="margin-top:24px">
-        <button class="btn btn-outline btn-sm" onclick="saveUserState()">💾 保存进度</button>
-        <button class="btn btn-outline btn-sm" onclick="exportBibleProgress()">📤 导出进度</button>
-      </div>
-      <div style="margin-top:16px">
-        <button class="btn btn-outline" style="color:var(--danger);border-color:var(--danger);width:100%" onclick="doLogout()">退出登录</button>
-      </div>
-    </div>
-  `;
-}
-
-function switchAuthTab(tab) {
-  $$('#authTabs .prayer-cat').forEach((b, i) => b.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register')));
-  $('#loginForm').style.display = tab === 'login' ? 'block' : 'none';
-  $('#registerForm').style.display = tab === 'register' ? 'block' : 'none';
-}
-
-async function doLogin() {
-  const username = $('#loginUsername')?.value;
-  const password = $('#loginPassword')?.value;
-  if (!username || !password) return showToast('请填写用户名和密码');
-
-  const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-  if (data.success) {
-    setUser(data);
-    showToast('登录成功！');
-    document.querySelector('.modal-overlay')?.remove();
-  } else if (data.error) {
-    // 本地模式登录
-    localLogin(username, password);
-  } else {
-    showToast(data.error || '登录失败');
-  }
-}
-
-function localLogin(username, password) {
-  const stored = localStorage.getItem('user_'+username);
-  if (!stored) { showToast('用户不存在'); return; }
-  const userData = JSON.parse(stored);
-  if (userData.password !== password) { showToast('密码错误'); return; }
-  State.user = userData;
-  State.token = 'local_' + username;
-  localStorage.setItem('current_user', JSON.stringify({ username, token: State.token }));
-  showToast('登录成功（离线模式）！');
-  document.querySelector('.modal-overlay')?.remove();
-  updateNavUser();
-}
-
-async function doRegister() {
-  const username = $('#regUsername')?.value;
-  const password = $('#regPassword')?.value;
-  const email = $('#regEmail')?.value || '';
-  if (!username || !password) return showToast('请填写用户名和密码');
-  if (username.length < 2) return showToast('用户名至少2个字符');
-  if (password.length < 4) return showToast('密码至少4个字符');
-
-  const data = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, password, email }) });
-  if (data.success) {
-    setUser(data);
-    showToast('注册成功！');
-    document.querySelector('.modal-overlay')?.remove();
-  } else if (data.error && data.error.includes('已存在')) {
-    showToast(data.error);
-  } else {
-    // 本地注册
-    const userData = { username, password, email, createdAt: Date.now(), bibleProgress: {}, bookmarks: [], notes: [], favorites: [] };
-    localStorage.setItem('user_'+username, JSON.stringify(userData));
-    State.user = userData;
-    State.token = 'local_' + username;
-    localStorage.setItem('current_user', JSON.stringify({ username, token: State.token }));
-    showToast('注册成功（离线模式）！');
-    document.querySelector('.modal-overlay')?.remove();
-    updateNavUser();
-  }
-}
-
-function setUser(data) {
-  State.user = data.user;
-  State.token = data.token;
-  localStorage.setItem('current_user', JSON.stringify({ username: data.user.username, token: data.token }));
-  updateNavUser();
-}
-
-function doLogout() {
-  State.user = null;
-  State.token = null;
-  localStorage.removeItem('current_user');
-  updateNavUser();
-  showToast('已退出登录');
-  document.querySelector('.modal-overlay')?.remove();
-}
-
-function updateNavUser() {
-  const btn = $('#navUser');
-  if (btn) btn.textContent = State.user ? State.user.username.substring(0,2) : '👤';
-}
-
-function saveUserState() {
-  if (!State.user) return showToast('请先登录');
-  localStorage.setItem('user_'+State.user.username, JSON.stringify(State.user));
-  showToast('进度已保存！');
-}
-
-function exportBibleProgress() {
-  if (!State.user) return;
-  const data = JSON.stringify(State.user.bibleProgress || {}, null, 2);
-  copyText(data);
-  showToast('进度已复制到剪贴板！');
-}
-
-// ============ 分享功能 ============
-function shareVerse(text, ref) {
-  const shareText = `"${text}"\n\n——${ref}\n\n📖 更多经文尽在：biblechat.cc`;
-  copyText(shareText);
-  showToast('已复制到剪贴板！可直接粘贴到微信朋友圈 ✅');
-}
-
-function copyText(text) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-  } else {
-    fallbackCopy(text);
-  }
-}
-
-function fallbackCopy(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-}
-
-function showToast(msg) {
-  const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2500);
-}
-
-// ============ 导航 ============
-function navigate(page) {
-  renderPage(page);
-}
-
-// ============ 初始化 ============
-document.addEventListener('DOMContentLoaded', () => {
-  // 恢复用户状态
-  const saved = localStorage.getItem('current_user');
-  if (saved) {
+  async register() {
+    const name = document.getElementById('regName').value.trim();
+    const email = document.getElementById('regEmail').value.trim();
+    const phone = document.getElementById('regPhone').value.trim();
+    if (!name || !email) { this.showToast('请填写姓名和邮箱'); return; }
+    const user = { id: crypto.randomUUID(), name, email, phone, registeredAt: Date.now() };
+    localStorage.setItem('bc_user', JSON.stringify(user));
+    this.user = user;
+    // 同步到后端
     try {
-      const parsed = JSON.parse(saved);
-      State.token = parsed.token;
-      State.user = { username: parsed.username, bibleProgress: {}, bookmarks: [], notes: [] };
-      // 加载用户数据
-      const userData = localStorage.getItem('user_' + parsed.username);
-      if (userData) {
-        State.user = JSON.parse(userData);
+      await fetch(`${API_BASE}/api/user/register`, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(user)
+      });
+    } catch(e) {}
+    this.showToast('注册成功');
+    this.renderMorePage(document.getElementById('page-more'));
+  }
+
+  logout() {
+    localStorage.removeItem('bc_user');
+    this.user = null;
+    this.renderMorePage(document.getElementById('page-more'));
+  }
+
+  renderUserInfo() { /* updated by renderMorePage */ }
+
+  // ======== 播客 ========
+  async generatePodcast() {
+    const input = document.getElementById('podcastInput');
+    const text = input.value.trim();
+    if (!text) { this.showToast('请输入内容'); return; }
+    const scriptEl = document.getElementById('podcastScript');
+    scriptEl.style.display = 'block';
+    scriptEl.innerHTML = '<div class="loading"><div class="loading-spinner"></div>生成播客脚本中...</div>';
+
+    try {
+      const res = await fetch(`${API_BASE}/api/podcast`, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text, model: this.currentModel })
+      }).catch(() => null);
+      let script = '';
+      if (res && res.ok) {
+        const data = await res.json();
+        script = data.script || '';
       }
-    } catch (e) {}
+      if (!script) {
+        // 本地生成播客脚本
+        script = `&#x1F3A7; 欢迎来到 Bible Chat 播客\n\n今天我们要分享的内容是：\n\n${text}\n\n[BGM:peaceful]\n\n这段经文提醒我们，神的话语是我们脚前的灯，路上的光。\n\n[BGM:peaceful]\n\n愿你在今天的生活中经历神的同在。\n\n感谢收听，我们下期再见。愿神赐福你！`;
+      }
+      scriptEl.innerText = script;
+      this.playPodcast(script);
+    } catch(e) {
+      scriptEl.innerText = '生成失败，请稍后重试';
+    }
   }
 
-  // Tab导航
-  $$('.tab-item').forEach(tab => {
-    tab.addEventListener('click', () => navigate(tab.dataset.page));
-  });
-
-  // 用户按钮
-  $('#navUser')?.addEventListener('click', showAuthModal);
-
-  // 初始页面
-  updateNavUser();
-  renderPage('home');
-});
-
-// ============ 内置圣经经文数据 ============
-const EMBEDDED_BIBLE = {
-  '约翰福音': {
-    1: [{v:1,t:"太初有道，道与神同在，道就是神。"},{v:2,t:"这道太初与神同在。"},{v:3,t:"万物是藉着他造的；凡被造的，没有一样不是藉着他造的。"},{v:4,t:"生命在他里头，这生命就是人的光。"},{v:5,t:"光照在黑暗里，黑暗却不接受光。"},{v:12,t:"凡接待他的，就是信他名的人，他就赐他们权柄作神的儿女。"},{v:14,t:"道成了肉身，住在我们中间，充充满满地有恩典有真理。我们也见过他的荣光，正是父独生子的荣光。"},{v:17,t:"律法本是藉着摩西传的；恩典和真理都是由耶稣基督来的。"}],
-    3: [{v:16,t:"神爱世人，甚至将他的独生子赐给他们，叫一切信他的，不至灭亡，反得永生。"},{v:17,t:"因为神差他的儿子降世，不是要定世人的罪，乃是要叫世人因他得救。"},{v:18,t:"信他的人，不被定罪；不信的人，罪已经定了，因为他不信神独生子的名。"},{v:19,t:"光来到世间，世人因自己的行为是恶的，不爱光，倒爱黑暗，定他们的罪就是在此。"},{v:20,t:"凡作恶的便恨光，并不来就光，恐怕他的行为受责备。"},{v:21,t:"但行真理的必来就光，要显明他所行的是靠神而行。"}],
-    14: [{v:1,t:"你们心里不要忧愁；你们信神，也当信我。"},{v:2,t:"在我父的家里有许多住处；若是没有，我就早已告诉你们了。我去原是为你们预备地方去。"},{v:3,t:"我若去为你们预备了地方，就必再来接你们到我那里去，我在哪里，叫你们也在那里。"},{v:6,t:"耶稣说：我就是道路、真理、生命；若不藉着我，没有人能到父那里去。"},{v:15,t:"你们若爱我，就必遵守我的命令。"},{v:16,t:"我要求父，父就另外赐给你们一位保惠师，叫他永远与你们同在。"},{v:17,t:"就是真理的圣灵，乃世人不能接受的；因为不见他，也不认识他。你们却认识他，因他常与你们同在，也要在你们里面。"},{v:27,t:"我留下平安给你们；我将我的平安赐给你们。我所赐的，不像世人所赐的。你们心里不要忧愁，也不要胆怯。"}],
-    15: [{v:4,t:"你们要常在我里面，我也常在你们里面。枝子若不常在葡萄树上，自己就不能结果子；你们若不常在我里面，也是这样。"},{v:5,t:"我是葡萄树，你们是枝子。常在我里面的，我也常在他里面，这人就多结果子；因为离了我，你们就不能做什么。"},{v:7,t:"你们若常在我里面，我的话也常在你们里面，凡你们所愿意的，祈求，就给你们成就。"},{v:12,t:"你们要彼此相爱，像我爱你们一样；这就是我的命令。"},{v:13,t:"人为朋友舍命，人的爱心没有比这个大的。"}]
-  },
-  '诗篇': {
-    1: [{v:1,t:"不从恶人的计谋，不站罪人的道路，不坐亵慢人的座位。"},{v:2,t:"惟喜爱耶和华的律法，昼夜思想，这人便为有福！"},{v:3,t:"他要像一棵树栽在溪水旁，按时候结果子，叶子也不枯干。凡他所做的尽都顺利。"}],
-    23: [{v:1,t:"耶和华是我的牧者，我必不至缺乏。"},{v:2,t:"他使我躺卧在青草地上，领我在可安歇的水边。"},{v:3,t:"他使我的灵魂苏醒，为自己的名引导我走义路。"},{v:4,t:"我虽然行过死荫的幽谷，也不怕遭害，因为你与我同在；你的杖，你的竿，都安慰我。"},{v:5,t:"在我敌人面前，你为我摆设筵席；你用油膏了我的头，使我的福杯满溢。"},{v:6,t:"我一生一世必有恩惠慈爱随着我；我且要住在耶和华的殿中，直到永远。"}],
-    91: [{v:1,t:"住在至高者隐密处的，必住在全能者的荫下。"},{v:2,t:"我要论到耶和华说：他是我的避难所，是我的山寨，是我的神，是我所倚靠的。"}]
-  },
-  '创世记': {
-    1: [{v:1,t:"起初，神创造天地。"},{v:2,t:"地是空虚混沌，渊面黑暗；神的灵运行在水面上。"},{v:3,t:"神说：要有光，就有了光。"},{v:4,t:"神看光是好的，就把光暗分开了。"},{v:5,t:"神称光为昼，称暗为夜。有晚上，有早晨，这是头一日。"},{v:26,t:"神说：我们要照着我们的形像、按着我们的样式造人，使他们管理海里的鱼、空中的鸟、地上的牲畜，和全地，并地上所爬的一切昆虫。"},{v:27,t:"神就照着自己的形像造人，乃是照着他的形像造男造女。"}]
-  },
-  '启示录': {
-    21: [{v:1,t:"我又看见一个新天新地；因为先前的天地已经过去了，海也不再有了。"},{v:3,t:"我听见有大声音从宝座出来说：看哪，神的帐幕在人间。他要与人同住，他们要作他的子民。神要亲自与他们同在，作他们的神。"},{v:4,t:"神要擦去他们一切的眼泪；不再有死亡，也不再有悲哀、哭号、疼痛，因为以前的事都过去了。"},{v:5,t:"坐宝座的说：看哪，我将一切都更新了！"}],
-    22: [{v:13,t:"我是阿拉法，我是俄梅戛；我是首先的，我是末后的；我是初，我是终。"},{v:20,t:"证明这事的说：是了，我必快来！阿们！主耶稣啊，我愿你来！"}]
+  playPodcast(script) {
+    this.stopPodcast();
+    const speed = parseFloat(document.getElementById('podcastSpeed').value);
+    // 分段朗读，去掉 [BGM:xxx] 标记
+    const segments = script.split(/\[BGM:[^\]]+\]/).filter(s => s.trim());
+    let i = 0;
+    const speakNext = () => {
+      if (i >= segments.length) return;
+      const utter = new SpeechSynthesisUtterance(segments[i].trim());
+      utter.lang = 'zh-CN'; utter.rate = speed; utter.pitch = 1.0;
+      utter.onend = () => { i++; speakNext(); };
+      window.speechSynthesis.speak(utter);
+    };
+    speakNext();
   }
-};
+
+  stopPodcast() { window.speechSynthesis.cancel(); }
+
+  // ======== 管理面板 ========
+  showAdmin() {
+    const pwd = prompt('请输入管理员密码:');
+    if (pwd !== 'biblechat2026') { this.showToast('密码错误'); return; }
+    const panel = document.createElement('div');
+    panel.className = 'admin-panel active'; panel.id = 'adminPanel';
+    panel.innerHTML = `
+      <div class="admin-header">
+        <h2>&#x1F510; 管理面板</h2>
+        <button onclick="app.closeAdmin()">关闭</button>
+      </div>
+      <div class="admin-content" id="adminContent">
+        <div class="loading"><div class="loading-spinner"></div>加载数据...</div>
+      </div>`;
+    document.body.appendChild(panel);
+    this.loadAdminData();
+  }
+
+  async loadAdminData() {
+    const content = document.getElementById('adminContent');
+    try {
+      const res = await fetch(`${API_BASE}/api/admin`, { headers: { 'Authorization': 'Bearer biblechat2026' } }).catch(() => null);
+      let data = { users: [], totalUsers: 0, totalChats: 0 };
+      if (res && res.ok) data = await res.json();
+      content.innerHTML = `
+        <div class="stat-grid">
+          <div class="stat-card"><div class="number">${data.totalUsers}</div><div class="label">注册用户</div></div>
+          <div class="stat-card"><div class="number">${data.totalChats}</div><div class="label">总对话数</div></div>
+        </div>
+        <h3 style="color:var(--accent);margin-bottom:12px">用户列表</h3>
+        <table>
+          <thead><tr><th>姓名</th><th>邮箱</th><th>手机</th><th>注册时间</th></tr></thead>
+          <tbody>
+            ${data.users.map(u => `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.phone||'-'}</td><td>${new Date(u.registeredAt).toLocaleString()}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <p style="color:var(--text2);font-size:13px;margin-top:12px">Server: ${data.serverTime || 'N/A'}</p>`;
+    } catch(e) {
+      content.innerHTML = '<p style="color:var(--danger)">加载失败，请检查后端服务</p>';
+    }
+  }
+
+  closeAdmin() { document.getElementById('adminPanel')?.remove(); }
+
+  // ======== 工具 ========
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML.replace(/\n/g, '<br>');
+  }
+
+  showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg; toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+}
+
+const app = new BibleChatApp();
