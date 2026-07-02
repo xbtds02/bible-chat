@@ -1,9 +1,9 @@
-// Bible Chat v4.0 - GPT 中转站版
-// 改动: 1) API 改为 apicz.cc 中转站 2) 只用 GPT 模型 3) 不登录也可用 AI 4) 注册时有新人问卷
+// Bible Chat v4.2 - Cloudflare Worker 代理版
+// 改动: 1) API 通过 Cloudflare Worker 代理（解决 CORS 跨域）2) 只用 GPT 模型 3) 不登录也可用 AI 4) 注册时有新人问卷
 
 // ======== 配置 ========
 // API base: 优先用 localStorage 里的自定义地址（用于切换到代理）
-const DEFAULT_API_BASE = 'https://www.apicz.cc/v1/chat/completions';
+const DEFAULT_API_BASE = 'https://biblechat-proxy.befiy970.workers.dev/v1/chat/completions';
 function getApiBase() {
   return localStorage.getItem('bc_api_base') || DEFAULT_API_BASE;
 }
@@ -13,7 +13,7 @@ const _AK = [115,107,45,55,48,49,48,53,52,99,56,57,54,101,100,48,57,57,56,48,97,
 const DEFAULT_API_KEY = _AK;
 const DEFAULT_MODEL = 'gpt-5.4-mini';
 const SITE_NAME = 'biblechat.cc';
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.2';
 
 // 新人问卷选项
 const QUESTIONNAIRE = [
@@ -356,15 +356,7 @@ class BibleChatApp {
     } catch (e) {
       console.error('AI error:', e);
       loadingDiv.remove();
-      // 区分 CORS 错误和其他错误
-      const isCors = e.message?.includes('CORS') || e.message?.includes('Failed to fetch') || e.name === 'TypeError';
-      let hint;
-      if (isCors && getApiBase().includes('apicz.cc')) {
-        hint = '\n\n❌ CORS 跨域错误：apicz.cc 不支持跨域调用。\n💡 解决方法：到 admin.html (密码 biblechat2026) 配置 Cloudflare Worker 代理地址。\n详细步骤：worker-proxy/DEPLOY_GUIDE.md';
-      } else {
-        hint = '\n\n（提示：网络异常，已使用本地知识库回答）';
-      }
-      const reply = this.fallbackAIReply(text) + hint;
+      const reply = this.fallbackAIReply(text) + '\n\n（提示：网络异常，已使用本地知识库回答。请稍后重试。）';
       this.chatHistory.push({ role: 'ai', content: reply });
       this.renderChatMessages();
       this.saveChat();
@@ -1139,10 +1131,10 @@ class BibleChatApp {
         <p style="font-size:13px">Key: <code style="color:var(--accent2)">${getApiKey().slice(0,8)}...${getApiKey().slice(-6)}</code></p>
         <div style="margin-top:12px">
           <label style="color:var(--text2);font-size:13px">API Base URL (中转/代理地址):</label>
-          <input id="adminApiBase" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;outline:none;margin-top:4px" placeholder="https://www.apicz.cc/v1/chat/completions" value="${getApiBase()}">
+          <input id="adminApiBase" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;outline:none;margin-top:4px" placeholder="https://biblechat-proxy.befiy970.workers.dev/v1/chat/completions" value="${getApiBase()}">
           <button data-action="saveApiBase" style="margin-top:8px;background:var(--accent);border:none;border-radius:8px;padding:6px 12px;color:#1a1a2e;font-weight:bold;cursor:pointer;margin-right:8px">保存 API 地址</button>
           <button data-action="resetApiBase" style="margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);cursor:pointer">恢复默认</button>
-          <p style="color:var(--text2);font-size:11px;margin-top:6px">💡 如遇 CORS 跨域问题，可在 Cloudflare 部署 Worker 代理后填入代理地址</p>
+          <p style="color:var(--text2);font-size:11px;margin-top:6px">💡 当前已通过 Cloudflare Worker 代理调用 AI，无需额外配置。如需切换 API 地址可在此修改。</p>
         </div>
         <div style="margin-top:12px">
           <label style="color:var(--text2);font-size:13px">系统提示词:</label>
